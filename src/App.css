@@ -1,0 +1,104 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.logo .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.badge {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #1e3a2f;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.info {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.editor-panel,
+.viewer-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.editor-panel {
+  width: 42%;
+  border-right: 1px solid var(--border);
+  position: relative;
+}
+
+.viewer-panel {
+  flex: 1;
+}
+
+.panel-title {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  background: #14171c;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.error-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #3f1d1d;
+  color: var(--danger);
+  padding: 8px 12px;
+  font-size: 12px;
+  border-top: 1px solid #5c2a2a;
+}
+
+/* Monaco override */
+.monaco-editor,
+.monaco-editor-background {
+  background: #0f1115 !important;
+}
