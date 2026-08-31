@@ -83,6 +83,18 @@
   flex-shrink: 0;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panel-title .hint {
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #6b7280;
+  font-weight: 400;
 }
 
 .error-bar {
@@ -101,4 +113,15 @@
 .monaco-editor,
 .monaco-editor-background {
   background: #0f1115 !important;
+}
+
+/* Line highlight when selected from 3D or cursor */
+.selected-line-highlight {
+  background: rgba(110, 231, 183, 0.12) !important;
+}
+
+.selected-line-gutter {
+  background: #6ee7b7 !important;
+  width: 4px !important;
+  margin-left: 3px;
 }

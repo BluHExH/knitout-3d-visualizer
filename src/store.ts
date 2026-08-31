@@ -5,6 +5,7 @@ export type YarnPoint = {
   y: number
   z: number
   carrier?: string
+  line: number // 1-based source line
 }
 
 export type YarnPath = {
@@ -12,13 +13,8 @@ export type YarnPath = {
   carrier: string
   points: YarnPoint[]
   color: string
-}
-
-export type KnitoutLine = {
-  lineNumber: number
-  raw: string
-  op?: string
-  args?: string[]
+  /** All source lines that contributed to this path */
+  lines: number[]
 }
 
 type State = {
@@ -28,6 +24,8 @@ type State = {
   selectedYarnId: string | null
   error: string | null
   isRunning: boolean
+  /** When a yarn is clicked we set this so Monaco can jump */
+  jumpToLine: number | null
 
   setCode: (code: string) => void
   setYarnPaths: (paths: YarnPath[]) => void
@@ -35,7 +33,9 @@ type State = {
   setSelectedYarnId: (id: string | null) => void
   setError: (err: string | null) => void
   setIsRunning: (v: boolean) => void
+  setJumpToLine: (line: number | null) => void
   run: () => void
+  selectYarn: (id: string | null, line?: number | null) => void
 }
 
 const DEFAULT_CODE = `;!knitout-2
@@ -61,7 +61,6 @@ knit - f0 7
 outhook 7
 `
 
-// Simple carrier colors
 const CARRIER_COLORS: Record<string, string> = {
   '1': '#ef4444',
   '2': '#f97316',
@@ -76,23 +75,22 @@ const CARRIER_COLORS: Record<string, string> = {
 }
 
 /**
- * Very basic knitout → 3D yarn path converter (MVP).
- * This is a simplified topological placement, not physically accurate yet.
- * Goal: get something visible + linked to lines.
+ * Basic knitout → 3D yarn path converter.
+ * Each point stores the 1-based source line number for bidirectional linking.
  */
 function parseAndBuildYarnPaths(code: string): { paths: YarnPath[]; error: string | null } {
   const lines = code.split('\n')
   const paths: YarnPath[] = []
   let currentCarrier = '7'
   let currentPath: YarnPath | null = null
-  let needlePos: Record<string, { bed: string; n: number }> = {}
   let rack = 0
-  let y = 0 // course progress
+  let y = 0
   const needleSpacing = 1.0
   const bedGap = 2.5
 
   try {
     for (let i = 0; i < lines.length; i++) {
+      const lineNum = i + 1 // 1-based
       const raw = lines[i].trim()
       if (!raw || raw.startsWith(';') || raw.startsWith(';;')) continue
 
@@ -106,15 +104,16 @@ function parseAndBuildYarnPaths(code: string): { paths: YarnPath[]; error: strin
           carrier: currentCarrier,
           points: [],
           color: CARRIER_COLORS[currentCarrier] || '#aaaaaa',
+          lines: [lineNum],
         }
         paths.push(currentPath)
       } else if (op === 'outhook' || op === 'out') {
+        if (currentPath) currentPath.lines.push(lineNum)
         currentPath = null
       } else if (op === 'releasehook') {
-        // keep path
+        if (currentPath) currentPath.lines.push(lineNum)
       } else if (op === 'tuck' || op === 'knit' || op === 'miss') {
-        const dir = parts[1] // + or -
-        const needle = parts[2] // e.g. f3, b2, fs1
+        const needle = parts[2]
         const carrier = parts[3] || currentCarrier
 
         if (!currentPath || currentPath.carrier !== carrier) {
@@ -123,39 +122,37 @@ function parseAndBuildYarnPaths(code: string): { paths: YarnPath[]; error: strin
             carrier,
             points: [],
             color: CARRIER_COLORS[carrier] || '#aaaaaa',
+            lines: [],
           }
           paths.push(currentPath)
         }
 
-        // parse needle: f3, b2, fs1, bs0 etc.
-        const match = needle.match(/^(f|b)(s?)(-?\d+)$/i)
+        currentPath.lines.push(lineNum)
+
+        const match = needle?.match(/^(f|b)(s?)(-?\d+)$/i)
         if (!match) continue
         const bed = match[1].toLowerCase()
-        const isSlider = match[2] === 's'
         const n = parseInt(match[3], 10)
 
         const x = n * needleSpacing + (bed === 'b' ? rack : 0)
         const z = bed === 'f' ? -bedGap / 2 : bedGap / 2
         const yy = y
-
-        // simple stitch loop approximation
         const r = 0.35
-        currentPath.points.push({ x: x - r, y: yy, z, carrier })
-        currentPath.points.push({ x: x, y: yy + r * 0.8, z, carrier })
-        currentPath.points.push({ x: x + r, y: yy, z, carrier })
-        currentPath.points.push({ x: x, y: yy - r * 0.3, z, carrier })
 
-        needlePos[`${bed}${n}`] = { bed, n }
-        y += 0.15 // advance a bit per stitch for visibility
+        currentPath.points.push({ x: x - r, y: yy, z, carrier, line: lineNum })
+        currentPath.points.push({ x: x, y: yy + r * 0.8, z, carrier, line: lineNum })
+        currentPath.points.push({ x: x + r, y: yy, z, carrier, line: lineNum })
+        currentPath.points.push({ x: x, y: yy - r * 0.3, z, carrier, line: lineNum })
+
+        y += 0.15
       } else if (op === 'xfer') {
-        // very rough: just mark a transfer arc
-        // skip detailed for MVP
+        // MVP: skip detailed geometry
       } else if (op === 'rack') {
         rack = parseFloat(parts[1] || '0')
       }
     }
 
-    // normalize y so fabric is centered
+    // center Y
     if (paths.length > 0) {
       let minY = Infinity
       let maxY = -Infinity
@@ -167,9 +164,7 @@ function parseAndBuildYarnPaths(code: string): { paths: YarnPath[]; error: strin
       }
       const mid = (minY + maxY) / 2
       for (const p of paths) {
-        for (const pt of p.points) {
-          pt.y -= mid
-        }
+        for (const pt of p.points) pt.y -= mid
       }
     }
 
@@ -186,6 +181,7 @@ export const useStore = create<State>((set, get) => ({
   selectedYarnId: null,
   error: null,
   isRunning: false,
+  jumpToLine: null,
 
   setCode: (code) => set({ code }),
   setYarnPaths: (paths) => set({ yarnPaths: paths }),
@@ -193,10 +189,15 @@ export const useStore = create<State>((set, get) => ({
   setSelectedYarnId: (id) => set({ selectedYarnId: id }),
   setError: (err) => set({ error: err }),
   setIsRunning: (v) => set({ isRunning: v }),
+  setJumpToLine: (line) => set({ jumpToLine: line }),
+
+  selectYarn: (id, line = null) => {
+    set({ selectedYarnId: id, selectedLine: line ?? null, jumpToLine: line ?? null })
+  },
 
   run: () => {
     const { code } = get()
-    set({ isRunning: true, error: null })
+    set({ isRunning: true, error: null, selectedLine: null, selectedYarnId: null })
     const { paths, error } = parseAndBuildYarnPaths(code)
     set({ yarnPaths: paths, error, isRunning: false })
   },

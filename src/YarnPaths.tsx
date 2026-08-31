@@ -4,6 +4,13 @@ import { useStore, type YarnPath } from './store'
 
 function TubeYarn({ path }: { path: YarnPath }) {
   const meshRef = useRef<THREE.Mesh>(null)
+  const selectedLine = useStore((s) => s.selectedLine)
+  const selectedYarnId = useStore((s) => s.selectedYarnId)
+  const selectYarn = useStore((s) => s.selectYarn)
+
+  const isHighlighted =
+    selectedYarnId === path.id ||
+    (selectedLine !== null && path.lines.includes(selectedLine))
 
   const { geometry, material } = useMemo(() => {
     if (path.points.length < 2) {
@@ -18,7 +25,7 @@ function TubeYarn({ path }: { path: YarnPath }) {
 
     const material = new THREE.MeshStandardMaterial({
       color: path.color,
-      roughness: 0.45,
+      roughness: 0.4,
       metalness: 0.05,
       emissive: path.color,
       emissiveIntensity: 0.08,
@@ -27,8 +34,31 @@ function TubeYarn({ path }: { path: YarnPath }) {
     return { geometry, material }
   }, [path])
 
+  // Update material live when highlight changes
+  if (material) {
+    material.emissiveIntensity = isHighlighted ? 0.55 : 0.08
+    material.opacity = isHighlighted ? 1 : 0.85
+    material.transparent = !isHighlighted
+  }
+
+  const handleClick = (e: any) => {
+    e.stopPropagation()
+    const line = path.lines[0] ?? null
+    selectYarn(path.id, line)
+  }
+
   return (
-    <mesh ref={meshRef} geometry={geometry} material={material} castShadow receiveShadow />
+    <mesh
+      ref={meshRef}
+      geometry={geometry}
+      material={material}
+      castShadow
+      receiveShadow
+      onClick={handleClick}
+      onPointerOver={() => (document.body.style.cursor = 'pointer')}
+      onPointerOut={() => (document.body.style.cursor = 'default')}
+      scale={isHighlighted ? 1.15 : 1}
+    />
   )
 }
 

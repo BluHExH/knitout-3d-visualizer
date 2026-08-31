@@ -1,18 +1,76 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera, Environment, Grid } from '@react-three/drei'
-import Editor from '@monaco-editor/react'
+import Editor, { OnMount } from '@monaco-editor/react'
+import type { editor as MonacoEditor } from 'monaco-editor'
 import { useStore } from './store'
 import { YarnPaths } from './YarnPaths'
 import './App.css'
 
 export default function App() {
-  const { code, setCode, run, error, isRunning, yarnPaths } = useStore()
+  const {
+    code,
+    setCode,
+    run,
+    error,
+    isRunning,
+    yarnPaths,
+    setSelectedLine,
+    jumpToLine,
+    setJumpToLine,
+    selectedLine,
+  } = useStore()
+
+  const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null)
+  const decorationIds = useRef<string[]>([])
 
   useEffect(() => {
-    // auto-run on first load
     run()
   }, [])
+
+  // When a yarn is clicked → jump Monaco to that line
+  useEffect(() => {
+    if (jumpToLine && editorRef.current) {
+      editorRef.current.revealLineInCenter(jumpToLine)
+      editorRef.current.setPosition({ lineNumber: jumpToLine, column: 1 })
+      editorRef.current.focus()
+      setJumpToLine(null)
+    }
+  }, [jumpToLine, setJumpToLine])
+
+  // Highlight the selected line in the editor
+  useEffect(() => {
+    const ed = editorRef.current
+    if (!ed) return
+
+    decorationIds.current = ed.deltaDecorations(decorationIds.current, [])
+
+    if (selectedLine !== null) {
+      decorationIds.current = ed.deltaDecorations([], [
+        {
+          range: {
+            startLineNumber: selectedLine,
+            startColumn: 1,
+            endLineNumber: selectedLine,
+            endColumn: 999,
+          },
+          options: {
+            isWholeLine: true,
+            className: 'selected-line-highlight',
+            linesDecorationsClassName: 'selected-line-gutter',
+          },
+        },
+      ])
+    }
+  }, [selectedLine])
+
+  const handleEditorMount: OnMount = (editor) => {
+    editorRef.current = editor
+
+    editor.onDidChangeCursorPosition((e) => {
+      setSelectedLine(e.position.lineNumber)
+    })
+  }
 
   return (
     <div className="app">
@@ -28,19 +86,24 @@ export default function App() {
           </button>
           <span className="info">
             {yarnPaths.length} yarn path{yarnPaths.length !== 1 ? 's' : ''}
+            {selectedLine !== null && ` · line ${selectedLine}`}
           </span>
         </div>
       </header>
 
       <div className="main">
         <div className="editor-panel">
-          <div className="panel-title">Knitout / JS Code</div>
+          <div className="panel-title">
+            Knitout Code
+            <span className="hint">click a line → highlights yarn · click yarn → jumps here</span>
+          </div>
           <Editor
             height="100%"
             defaultLanguage="plaintext"
             theme="vs-dark"
             value={code}
             onChange={(v) => setCode(v || '')}
+            onMount={handleEditorMount}
             options={{
               fontSize: 13,
               minimap: { enabled: false },
@@ -48,6 +111,7 @@ export default function App() {
               scrollBeyondLastLine: false,
               wordWrap: 'on',
               automaticLayout: true,
+              renderLineHighlight: 'all',
             }}
           />
           {error && <div className="error-bar">{error}</div>}
