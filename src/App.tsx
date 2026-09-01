@@ -71,31 +71,74 @@ export default function App() {
       <header className="header">
         <div className="logo">
           <span className="dot" />
-          Knitout 3D Visualizer
-          <span className="badge">debug</span>
+          <span className="logo-text">Knitout 3D</span>
+          <span className="badge">visualizer</span>
         </div>
+
         <div className="actions">
-          <button className="primary" onClick={run} disabled={isRunning}>
-            {isRunning ? 'Running…' : 'Run / Analyze'}
-          </button>
-          <button onClick={relax} disabled={yarnPaths.length === 0}>{relaxed ? 'Relaxed ✓' : 'Relax'}</button>
-          <button onClick={exportOBJ} disabled={yarnPaths.length === 0}>Export OBJ</button>
-          <span className="sep" />
-          <button onClick={stepPrev} disabled={!operations.length}>‹ Prev</button>
-          {isPlaying ? (
-            <button className="primary" onClick={pause}>Pause</button>
-          ) : (
-            <button className="primary" onClick={play} disabled={!operations.length}>Play</button>
-          )}
-          <button onClick={stepNext} disabled={!operations.length}>Next ›</button>
-          <button onClick={stopPlay} disabled={selectedOpIndex === null && !isPlaying}>Stop</button>
-          <span className="info">
-            {yarnPaths.length} stitches
-            {errN > 0 && <span className="info-err"> · {errN} errors</span>}
-            {warnN > 0 && <span className="info-warn"> · {warnN} warnings</span>}
-            {selectedLine !== null && ` · L${selectedLine}`}
-            {selectedOpIndex !== null && ` · op ${selectedOpIndex}`}
-          </span>
+          <div className="btn-group" role="group" aria-label="Analyze">
+            <button className="primary" onClick={run} disabled={isRunning} title="Parse, simulate, and build 3D">
+              {isRunning ? 'Running…' : 'Run'}
+            </button>
+            <button onClick={relax} disabled={yarnPaths.length === 0} title="Extra physics iterations">
+              {relaxed ? 'Relaxed ✓' : 'Relax'}
+            </button>
+            <button onClick={exportOBJ} disabled={yarnPaths.length === 0} title="Download OBJ">
+              Export
+            </button>
+          </div>
+
+          <div className="btn-group" role="group" aria-label="Playback">
+            <button onClick={stepPrev} disabled={!operations.length} title="Previous operation">
+              ‹ Prev
+            </button>
+            {isPlaying ? (
+              <button className="primary" onClick={pause} title="Pause playback">
+                Pause
+              </button>
+            ) : (
+              <button className="primary" onClick={play} disabled={!operations.length} title="Step through ops">
+                Play
+              </button>
+            )}
+            <button onClick={stepNext} disabled={!operations.length} title="Next operation">
+              Next ›
+            </button>
+            <button className="ghost" onClick={stopPlay} disabled={selectedOpIndex === null && !isPlaying} title="Clear step selection">
+              Stop
+            </button>
+          </div>
+
+          <div className="status-pill">
+            <span className="status-item">
+              <span className="status-label">stitches</span>
+              <span className="status-val">{yarnPaths.length}</span>
+            </span>
+            {errN > 0 && (
+              <span className="status-item err">
+                <span className="status-label">errors</span>
+                <span className="status-val">{errN}</span>
+              </span>
+            )}
+            {warnN > 0 && (
+              <span className="status-item warn">
+                <span className="status-label">warn</span>
+                <span className="status-val">{warnN}</span>
+              </span>
+            )}
+            {selectedLine !== null && (
+              <span className="status-item">
+                <span className="status-label">line</span>
+                <span className="status-val">L{selectedLine}</span>
+              </span>
+            )}
+            {selectedOpIndex !== null && (
+              <span className="status-item">
+                <span className="status-label">op</span>
+                <span className="status-val">{selectedOpIndex}</span>
+              </span>
+            )}
+          </div>
         </div>
       </header>
 
@@ -113,8 +156,14 @@ export default function App() {
             onChange={(v) => setCode(v || '')}
             onMount={handleEditorMount}
             options={{
-              fontSize: 13, minimap: { enabled: false }, lineNumbers: 'on', glyphMargin: true,
-              scrollBeyondLastLine: false, wordWrap: 'on', automaticLayout: true, renderLineHighlight: 'all',
+              fontSize: 13,
+              minimap: { enabled: false },
+              lineNumbers: 'on',
+              glyphMargin: true,
+              scrollBeyondLastLine: false,
+              wordWrap: 'on',
+              automaticLayout: true,
+              renderLineHighlight: 'all',
             }}
           />
           {error && <div className="error-bar">{error}</div>}
@@ -123,13 +172,23 @@ export default function App() {
         <div className="viewer-panel">
           <div className="panel-title">3D Yarn View</div>
           <Canvas shadows>
-            <PerspectiveCamera makeDefault position={[8, 6, 12]} fov={45} />
+            <PerspectiveCamera makeDefault position={[12, 8, 16]} fov={45} />
             <OrbitControls makeDefault enableDamping dampingFactor={0.1} />
-            <ambientLight intensity={0.4} />
-            <directionalLight position={[10, 15, 8]} intensity={1.2} castShadow />
+            <ambientLight intensity={0.55} />
+            <directionalLight position={[10, 15, 8]} intensity={1.35} castShadow shadow-mapSize={[1024, 1024]} />
+            <directionalLight position={[-6, 8, -4]} intensity={0.35} />
             <Environment preset="city" />
-            <Grid args={[40, 40]} cellSize={1} cellThickness={0.5} cellColor="#2a2f3a"
-              sectionSize={5} sectionThickness={1} sectionColor="#3a4050" fadeDistance={30} infiniteGrid />
+            <Grid
+              args={[40, 40]}
+              cellSize={1}
+              cellThickness={0.5}
+              cellColor="#2a2f3a"
+              sectionSize={5}
+              sectionThickness={1}
+              sectionColor="#3a4050"
+              fadeDistance={30}
+              infiniteGrid
+            />
             <YarnPaths />
           </Canvas>
         </div>
