@@ -1,6 +1,6 @@
 # Knitout 3D Visualizer (Debug)
 
-Interactive 3D visualizer + machine-state debugger for knitout.
+Interactive 3D visualizer + machine-state debugger for knitout, with yarn physics.
 
 ## Run
 ```bash
@@ -9,16 +9,24 @@ npm run dev
 ```
 
 ## Features
-- 3D yarn view (front/back beds, transfers, per-stitch highlight)
-- Machine interpreter with loop tracking per needle
-- Errors & warnings (empty knit/xfer, carrier state, etc.)
+
+### Visualization & physics
+- Front / back beds, loop stitches, transfer arcs
+- **Spring-based yarn physics** (rest-length, self-repulsion, gravity)
+- **Continuous carrier bridges** between stitches
+- Auto-relax on every Run
+- Per-stitch / per-op highlighting
+- Export OBJ
+
+### Machine debugging
+- Loop tracking per needle
+- Errors & warnings (empty knit/xfer, carrier state, …)
 - Diagnostics + Needle bed + Operations panels
-- **Step-through Play / Pause / Next / Prev**
-- Relax + Export OBJ
+- **Play / Pause / Next / Prev** step-through
 
 ## Debug workflow
-1. Paste knitout → **Run / Analyze**
-2. Fix items in **Diagnostics**
-3. Use **Play** or **Next/Prev** to step through ops
-4. Check **Needle bed** final state
-5. Click stitches or ops to cross-link code ↔ 3D
+1. Paste knitout → **Run / Analyze** (physics applied automatically)
+2. Fix Diagnostics issues
+3. **Play** or step through ops
+4. **Relax** again for extra smoothing
+5. Check Needle bed final state
