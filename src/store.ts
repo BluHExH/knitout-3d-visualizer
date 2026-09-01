@@ -33,6 +33,8 @@ type State = {
   physicsIters: number
   yarnRadius: number
   courseOffset: boolean
+  gauge: number
+  showNeedleLabels: boolean
   setCode: (c: string) => void
   setSelectedLine: (l: number | null) => void
   setJumpToLine: (l: number | null) => void
@@ -42,6 +44,8 @@ type State = {
   setHighlightCurrentOnly: (v: boolean) => void
   setYarnRadius: (v: number) => void
   setCourseOffset: (v: boolean) => void
+  setGauge: (v: number) => void
+  setShowNeedleLabels: (v: boolean) => void
   selectYarn: (id: string | null, line?: number | null) => void
   run: () => void
   relax: () => void
@@ -55,7 +59,7 @@ type State = {
 
 const DEFAULT_CODE = `;!knitout-2
 ;;Carriers: 1 2 3 4 5 6 7 8 9 10
-;; bigger sample: 8 needles, multi-course plain + transfer band
+;; multi-carrier sample: blue(7) then teal(5), 8 needles + transfer
 inhook 7
 tuck - f7 7
 tuck - f5 7
@@ -90,14 +94,24 @@ knit - f3 7
 knit - f2 7
 knit - f1 7
 knit - f0 7
-knit + f0 7
-knit + f1 7
-knit + f2 7
-knit + f3 7
-knit + f4 7
-knit + f5 7
-knit + f6 7
-knit + f7 7
+outhook 7
+inhook 5
+knit + f0 5
+knit + f1 5
+knit + f2 5
+knit + f3 5
+knit + f4 5
+knit + f5 5
+knit + f6 5
+knit + f7 5
+knit - f7 5
+knit - f6 5
+knit - f5 5
+knit - f4 5
+knit - f3 5
+knit - f2 5
+knit - f1 5
+knit - f0 5
 xfer f0 b0
 xfer f1 b1
 xfer f2 b2
@@ -106,22 +120,22 @@ xfer f4 b4
 xfer f5 b5
 xfer f6 b6
 xfer f7 b7
-knit - b7 7
-knit - b6 7
-knit - b5 7
-knit - b4 7
-knit - b3 7
-knit - b2 7
-knit - b1 7
-knit - b0 7
-knit + b0 7
-knit + b1 7
-knit + b2 7
-knit + b3 7
-knit + b4 7
-knit + b5 7
-knit + b6 7
-knit + b7 7
+knit + b0 5
+knit + b1 5
+knit + b2 5
+knit + b3 5
+knit + b4 5
+knit + b5 5
+knit + b6 5
+knit + b7 5
+knit - b7 5
+knit - b6 5
+knit - b5 5
+knit - b4 5
+knit - b3 5
+knit - b2 5
+knit - b1 5
+knit - b0 5
 xfer b0 f0
 xfer b1 f1
 xfer b2 f2
@@ -130,23 +144,15 @@ xfer b4 f4
 xfer b5 f5
 xfer b6 f6
 xfer b7 f7
-knit - f7 7
-knit - f6 7
-knit - f5 7
-knit - f4 7
-knit - f3 7
-knit - f2 7
-knit - f1 7
-knit - f0 7
-knit + f0 7
-knit + f1 7
-knit + f2 7
-knit + f3 7
-knit + f4 7
-knit + f5 7
-knit + f6 7
-knit + f7 7
-outhook 7
+knit + f0 5
+knit + f1 5
+knit + f2 5
+knit + f3 5
+knit + f4 5
+knit + f5 5
+knit + f6 5
+knit + f7 5
+outhook 5
 `
 
 export const useStore = create<State>((set, get) => ({
@@ -171,6 +177,8 @@ export const useStore = create<State>((set, get) => ({
   physicsIters: 56,
   yarnRadius: 1,
   courseOffset: true,
+  gauge: 1,
+  showNeedleLabels: true,
 
   setCode: (code) => set({ code }),
   setSelectedLine: (line) => set({ selectedLine: line }),
@@ -181,6 +189,8 @@ export const useStore = create<State>((set, get) => ({
   setHighlightCurrentOnly: (v) => set({ highlightCurrentOnly: v }),
   setYarnRadius: (v) => set({ yarnRadius: Math.min(1.8, Math.max(0.45, v)) }),
   setCourseOffset: (v) => set({ courseOffset: v }),
+  setGauge: (v) => set({ gauge: Math.min(1.5, Math.max(0.6, v)) }),
+  setShowNeedleLabels: (v) => set({ showNeedleLabels: v }),
   selectYarn: (id, line = null) =>
     set({ selectedYarnId: id, selectedLine: line ?? null, jumpToLine: line ?? null }),
 
@@ -197,7 +207,7 @@ export const useStore = create<State>((set, get) => ({
     })
     try {
       const { operations, errors, finalState } = interpretKnitout(code)
-      let yarnPaths = buildGeometry(operations, { courseOffset: get().courseOffset })
+      let yarnPaths = buildGeometry(operations, { courseOffset: get().courseOffset, gauge: get().gauge })
       yarnPaths = linkCarrierPaths(yarnPaths)
       yarnPaths = relaxPaths(yarnPaths, physicsIters)
       set({

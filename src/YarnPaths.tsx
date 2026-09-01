@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
+import { Text } from '@react-three/drei'
 import { useStore, type YarnPath } from './store'
 
 function TubeYarn({ path }: { path: YarnPath }) {
@@ -94,13 +95,19 @@ function BedGuides() {
   return (
     <group>
       <mesh position={[0, -0.08, -1.5]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[16, 0.5]} />
+        <planeGeometry args={[20, 0.55]} />
         <meshStandardMaterial color="#1a2332" transparent opacity={0.55} roughness={0.9} />
       </mesh>
       <mesh position={[0, -0.08, 1.5]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[16, 0.5]} />
+        <planeGeometry args={[20, 0.55]} />
         <meshStandardMaterial color="#1a2332" transparent opacity={0.55} roughness={0.9} />
       </mesh>
+      <Text position={[-9.2, -0.05, -1.5]} fontSize={0.28} color="#6b7280" anchorX="center" anchorY="middle">
+        front
+      </Text>
+      <Text position={[-9.2, -0.05, 1.5]} fontSize={0.28} color="#6b7280" anchorX="center" anchorY="middle">
+        back
+      </Text>
     </group>
   )
 }
@@ -108,27 +115,49 @@ function BedGuides() {
 function NeedleMarkers() {
   const occupied = useStore((s) => s.occupied)
   const finalState = useStore((s) => s.finalState)
+  const gauge = useStore((s) => s.gauge)
+  const showNeedleLabels = useStore((s) => s.showNeedleLabels)
   const rack = finalState?.rack ?? 0
-  const NS = 1.1
+  const NS = 1.1 * gauge
   const BG = 3.0
+
   if (!occupied.length) return null
+
   const xs = occupied.map((n) => n.n * NS + (n.bed === 'b' ? rack * NS : 0))
   const midX = xs.reduce((a, b) => a + b, 0) / xs.length
+
   return (
     <group>
       {occupied.map((n) => {
         const x = n.n * NS + (n.bed === 'b' ? rack * NS : 0) - midX
         const z = n.bed === 'f' ? -BG / 2 : BG / 2
+        const multi = n.loops > 1
         return (
-          <mesh key={n.key} position={[x, -0.35, z]}>
-            <cylinderGeometry args={[0.06, 0.06, 0.25, 8]} />
-            <meshStandardMaterial
-              color={n.loops > 1 ? '#fbbf24' : '#6ee7b7'}
-              emissive={n.loops > 1 ? '#fbbf24' : '#6ee7b7'}
-              emissiveIntensity={0.25}
-              roughness={0.4}
-            />
-          </mesh>
+          <group key={n.key} position={[x, -0.35, z]}>
+            <mesh>
+              <cylinderGeometry args={[0.06, 0.06, 0.28, 8]} />
+              <meshStandardMaterial
+                color={multi ? '#fbbf24' : '#6ee7b7'}
+                emissive={multi ? '#fbbf24' : '#6ee7b7'}
+                emissiveIntensity={0.25}
+                roughness={0.4}
+              />
+            </mesh>
+            {showNeedleLabels && (
+              <Text
+                position={[0, -0.32, 0]}
+                fontSize={0.22}
+                color={multi ? '#fcd34d' : '#a7f3d0'}
+                anchorX="center"
+                anchorY="top"
+                outlineWidth={0.012}
+                outlineColor="#0b0d10"
+              >
+                {n.key}
+                {multi ? `×${n.loops}` : ''}
+              </Text>
+            )}
+          </group>
         )
       })}
     </group>
@@ -137,6 +166,7 @@ function NeedleMarkers() {
 
 export function YarnPaths() {
   const yarnPaths = useStore((s) => s.yarnPaths)
+
   return (
     <group>
       <BedGuides />
