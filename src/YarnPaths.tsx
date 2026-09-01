@@ -11,6 +11,7 @@ function TubeYarn({ path }: { path: YarnPath }) {
   const ghostPast = useStore((s) => s.ghostPast)
   const highlightCurrentOnly = useStore((s) => s.highlightCurrentOnly)
   const selectYarn = useStore((s) => s.selectYarn)
+  const yarnRadius = useStore((s) => s.yarnRadius)
 
   const op = path.opIndex ?? -1
   const isFuture = showUpToOp !== null && op > showUpToOp
@@ -29,7 +30,8 @@ function TubeYarn({ path }: { path: YarnPath }) {
   const isCarrier = path.kind === 'carrier'
   const isGhost = isPast && ghostPast && !isHighlighted
 
-  const radius = isTransfer ? 0.048 : isCarrier ? 0.078 : path.held ? 0.125 : 0.105
+  const base = isTransfer ? 0.048 : isCarrier ? 0.078 : path.held ? 0.125 : 0.105
+  const radius = base * yarnRadius
 
   const { geometry, material } = useMemo(() => {
     if (path.points.length < 2) {
@@ -38,8 +40,7 @@ function TubeYarn({ path }: { path: YarnPath }) {
     const curvePoints = path.points.map((p) => new THREE.Vector3(p.x, p.y, p.z))
     const curve = new THREE.CatmullRomCurve3(curvePoints, false, 'catmullrom', 0.35)
     const tubularSegments = Math.max(24, path.points.length * 5)
-    const radialSegments = 10
-    const geometry = new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, false)
+    const geometry = new THREE.TubeGeometry(curve, tubularSegments, radius, 10, false)
 
     const material = new THREE.MeshStandardMaterial({
       color: path.color,
@@ -110,12 +111,9 @@ function NeedleMarkers() {
   const rack = finalState?.rack ?? 0
   const NS = 1.1
   const BG = 3.0
-
   if (!occupied.length) return null
-
   const xs = occupied.map((n) => n.n * NS + (n.bed === 'b' ? rack * NS : 0))
   const midX = xs.reduce((a, b) => a + b, 0) / xs.length
-
   return (
     <group>
       {occupied.map((n) => {
@@ -139,7 +137,6 @@ function NeedleMarkers() {
 
 export function YarnPaths() {
   const yarnPaths = useStore((s) => s.yarnPaths)
-
   return (
     <group>
       <BedGuides />
