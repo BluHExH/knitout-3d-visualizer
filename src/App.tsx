@@ -12,6 +12,8 @@ export default function App() {
     code,
     setCode,
     run,
+    relax,
+    exportOBJ,
     error,
     isRunning,
     yarnPaths,
@@ -19,6 +21,7 @@ export default function App() {
     jumpToLine,
     setJumpToLine,
     selectedLine,
+    relaxed,
   } = useStore()
 
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null)
@@ -28,7 +31,6 @@ export default function App() {
     run()
   }, [])
 
-  // When a yarn is clicked → jump Monaco to that line
   useEffect(() => {
     if (jumpToLine && editorRef.current) {
       editorRef.current.revealLineInCenter(jumpToLine)
@@ -38,7 +40,6 @@ export default function App() {
     }
   }, [jumpToLine, setJumpToLine])
 
-  // Highlight the selected line in the editor
   useEffect(() => {
     const ed = editorRef.current
     if (!ed) return
@@ -66,7 +67,6 @@ export default function App() {
 
   const handleEditorMount: OnMount = (editor) => {
     editorRef.current = editor
-
     editor.onDidChangeCursorPosition((e) => {
       setSelectedLine(e.position.lineNumber)
     })
@@ -78,14 +78,20 @@ export default function App() {
         <div className="logo">
           <span className="dot" />
           Knitout 3D Visualizer
-          <span className="badge">MVP</span>
+          <span className="badge">v0.3</span>
         </div>
         <div className="actions">
           <button className="primary" onClick={run} disabled={isRunning}>
             {isRunning ? 'Running…' : 'Run / Show'}
           </button>
+          <button onClick={relax} disabled={yarnPaths.length === 0} title="Softens stitch loops">
+            {relaxed ? 'Relaxed ✓' : 'Relax'}
+          </button>
+          <button onClick={exportOBJ} disabled={yarnPaths.length === 0} title="Download OBJ">
+            Export OBJ
+          </button>
           <span className="info">
-            {yarnPaths.length} yarn path{yarnPaths.length !== 1 ? 's' : ''}
+            {yarnPaths.length} stitch{yarnPaths.length !== 1 ? 'es' : ''}
             {selectedLine !== null && ` · line ${selectedLine}`}
           </span>
         </div>
@@ -95,7 +101,7 @@ export default function App() {
         <div className="editor-panel">
           <div className="panel-title">
             Knitout Code
-            <span className="hint">click a line → highlights yarn · click yarn → jumps here</span>
+            <span className="hint">line ↔ stitch · click yarn to jump</span>
           </div>
           <Editor
             height="100%"

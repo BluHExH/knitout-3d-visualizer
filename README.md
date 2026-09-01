@@ -1,4 +1,4 @@
-# Knitout 3D Visualizer (MVP)
+# Knitout 3D Visualizer
 
 Interactive 3D visualizer for knitout files with live code editing.
 
@@ -18,20 +18,23 @@ npm run dev
 Open http://localhost:5173
 
 ## Features
-- Load / edit knitout code
-- **Improved stitch topology**: front & back beds separated in Z
-- Proper loop-shaped stitches (knit vs tuck)
+- Live knitout editor + 3D yarn view
+- **Front / back beds** separated in Z
+- Loop-shaped stitches (knit vs tuck)
 - **Transfer arcs** (yellow) between beds
-- Course-based layout (direction change advances Y)
-- Carrier colors
-- Orbit controls + bed guides
-- **Bidirectional highlighting**: click a code line → yarn lights up; click a yarn → jumps to the source line
+- Course-based layout
+- **Per-stitch highlighting** — cursor on a line highlights only that stitch
+- Bidirectional link: click stitch → jumps to code line
+- **Relax** — Laplacian smoothing for softer loops
+- **Export OBJ** — download the yarn geometry
+- Carrier colors + bed guides
 
 ## Default example
-Includes cast-on, front courses, transfers to back bed, back knitting, and transfers back to front.
+Cast-on → front courses → transfers to back → back knitting → transfers back → final course.
 
-## Next steps
-- Per-stitch (not just per-path) highlighting
-- Simple yarn relaxation / physics
-- More operations (split, drop, etc.)
-- Export OBJ / GLTF
+## Controls
+| Button | Action |
+|--------|--------|
+| Run / Show | Parse code & rebuild 3D |
+| Relax | Soften stitch geometry |
+| Export OBJ | Download `.obj` file |

@@ -10,10 +10,11 @@ function TubeYarn({ path }: { path: YarnPath }) {
 
   const isHighlighted =
     selectedYarnId === path.id ||
-    (selectedLine !== null && path.lines.includes(selectedLine))
+    (selectedLine !== null &&
+      (path.primaryLine === selectedLine || path.lines.includes(selectedLine)))
 
   const isTransfer = path.kind === 'transfer'
-  const radius = isTransfer ? 0.06 : 0.13
+  const radius = isTransfer ? 0.055 : 0.12
 
   const { geometry, material } = useMemo(() => {
     if (path.points.length < 2) {
@@ -21,34 +22,32 @@ function TubeYarn({ path }: { path: YarnPath }) {
     }
 
     const curvePoints = path.points.map((p) => new THREE.Vector3(p.x, p.y, p.z))
-    const curve = new THREE.CatmullRomCurve3(curvePoints, false, 'catmullrom', 0.25)
+    const curve = new THREE.CatmullRomCurve3(curvePoints, false, 'catmullrom', 0.2)
 
-    const tubularSegments = Math.max(24, path.points.length * 3)
-    const geometry = new THREE.TubeGeometry(curve, tubularSegments, radius, 8, false)
+    const tubularSegments = Math.max(16, path.points.length * 3)
+    const geometry = new THREE.TubeGeometry(curve, tubularSegments, radius, 7, false)
 
     const material = new THREE.MeshStandardMaterial({
       color: path.color,
-      roughness: isTransfer ? 0.3 : 0.4,
-      metalness: isTransfer ? 0.4 : 0.05,
+      roughness: isTransfer ? 0.3 : 0.42,
+      metalness: isTransfer ? 0.35 : 0.04,
       emissive: path.color,
-      emissiveIntensity: 0.08,
-      transparent: isTransfer,
-      opacity: isTransfer ? 0.85 : 1,
+      emissiveIntensity: 0.07,
+      transparent: true,
+      opacity: isTransfer ? 0.8 : 0.95,
     })
 
     return { geometry, material }
   }, [path, radius, isTransfer])
 
   if (material) {
-    material.emissiveIntensity = isHighlighted ? 0.65 : isTransfer ? 0.15 : 0.08
-    material.opacity = isHighlighted ? 1 : isTransfer ? 0.75 : 0.9
-    material.transparent = true
+    material.emissiveIntensity = isHighlighted ? 0.7 : isTransfer ? 0.12 : 0.07
+    material.opacity = isHighlighted ? 1 : isTransfer ? 0.7 : 0.92
   }
 
   const handleClick = (e: any) => {
     e.stopPropagation()
-    const line = path.lines[0] ?? null
-    selectYarn(path.id, line)
+    selectYarn(path.id, path.primaryLine)
   }
 
   return (
@@ -61,22 +60,21 @@ function TubeYarn({ path }: { path: YarnPath }) {
       onClick={handleClick}
       onPointerOver={() => (document.body.style.cursor = 'pointer')}
       onPointerOut={() => (document.body.style.cursor = 'default')}
-      scale={isHighlighted ? 1.2 : 1}
+      scale={isHighlighted ? 1.25 : 1}
     />
   )
 }
 
-/** Simple visual markers for the two beds */
 function BedGuides() {
   return (
     <group>
       <mesh position={[0, -0.05, -1.6]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[12, 0.35]} />
-        <meshStandardMaterial color="#1e293b" transparent opacity={0.5} />
+        <meshStandardMaterial color="#1e293b" transparent opacity={0.45} />
       </mesh>
       <mesh position={[0, -0.05, 1.6]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[12, 0.35]} />
-        <meshStandardMaterial color="#1e293b" transparent opacity={0.5} />
+        <meshStandardMaterial color="#1e293b" transparent opacity={0.45} />
       </mesh>
     </group>
   )
