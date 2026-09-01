@@ -29,42 +29,45 @@ function TubeYarn({ path }: { path: YarnPath }) {
   const isCarrier = path.kind === 'carrier'
   const isGhost = isPast && ghostPast && !isHighlighted
 
-  const radius = isTransfer ? 0.05 : isCarrier ? 0.085 : path.held ? 0.13 : 0.11
+  const radius = isTransfer ? 0.048 : isCarrier ? 0.078 : path.held ? 0.125 : 0.105
 
   const { geometry, material } = useMemo(() => {
     if (path.points.length < 2) {
       return { geometry: new THREE.BufferGeometry(), material: new THREE.MeshStandardMaterial() }
     }
     const curvePoints = path.points.map((p) => new THREE.Vector3(p.x, p.y, p.z))
-    const curve = new THREE.CatmullRomCurve3(curvePoints, false, 'catmullrom', 0.25)
-    const tubularSegments = Math.max(20, path.points.length * 4)
-    const geometry = new THREE.TubeGeometry(curve, tubularSegments, radius, 8, false)
+    const curve = new THREE.CatmullRomCurve3(curvePoints, false, 'catmullrom', 0.35)
+    const tubularSegments = Math.max(24, path.points.length * 5)
+    const radialSegments = 10
+    const geometry = new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, false)
 
     const material = new THREE.MeshStandardMaterial({
       color: path.color,
-      roughness: isTransfer ? 0.28 : 0.55,
-      metalness: isTransfer ? 0.4 : 0.02,
+      roughness: isTransfer ? 0.35 : 0.72,
+      metalness: isTransfer ? 0.35 : 0.0,
       emissive: path.color,
-      emissiveIntensity: 0.05,
+      emissiveIntensity: 0.02,
       transparent: true,
-      opacity: isTransfer ? 0.75 : isCarrier ? 0.85 : 0.96,
+      opacity: isTransfer ? 0.78 : isCarrier ? 0.88 : 0.98,
     })
     return { geometry, material }
   }, [path, radius, isTransfer, isCarrier])
 
   if (material) {
     if (isGhost) {
-      material.opacity = 0.28
-      material.emissiveIntensity = 0.02
+      material.opacity = 0.22
+      material.emissiveIntensity = 0.01
+      material.roughness = 0.85
     } else if (isHighlighted) {
-      material.emissiveIntensity = 0.65
+      material.emissiveIntensity = 0.45
       material.opacity = 1
+      material.roughness = 0.4
     } else if (highlightCurrentOnly && showUpToOp !== null && !isCurrent) {
-      material.opacity = 0.35
-      material.emissiveIntensity = 0.03
+      material.opacity = 0.3
+      material.emissiveIntensity = 0.01
     } else {
-      material.emissiveIntensity = isTransfer ? 0.12 : 0.05
-      material.opacity = isTransfer ? 0.75 : isCarrier ? 0.85 : 0.96
+      material.emissiveIntensity = isTransfer ? 0.1 : 0.02
+      material.opacity = isTransfer ? 0.78 : isCarrier ? 0.88 : 0.98
     }
   }
 
@@ -81,7 +84,7 @@ function TubeYarn({ path }: { path: YarnPath }) {
       }}
       onPointerOver={() => (document.body.style.cursor = 'pointer')}
       onPointerOut={() => (document.body.style.cursor = 'default')}
-      scale={isHighlighted ? 1.22 : 1}
+      scale={isHighlighted ? 1.18 : 1}
     />
   )
 }
@@ -89,14 +92,47 @@ function TubeYarn({ path }: { path: YarnPath }) {
 function BedGuides() {
   return (
     <group>
-      <mesh position={[0, -0.05, -1.6]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[14, 0.4]} />
-        <meshStandardMaterial color="#1e293b" transparent opacity={0.45} />
+      <mesh position={[0, -0.08, -1.5]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[16, 0.5]} />
+        <meshStandardMaterial color="#1a2332" transparent opacity={0.55} roughness={0.9} />
       </mesh>
-      <mesh position={[0, -0.05, 1.6]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[14, 0.4]} />
-        <meshStandardMaterial color="#1e293b" transparent opacity={0.45} />
+      <mesh position={[0, -0.08, 1.5]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[16, 0.5]} />
+        <meshStandardMaterial color="#1a2332" transparent opacity={0.55} roughness={0.9} />
       </mesh>
+    </group>
+  )
+}
+
+function NeedleMarkers() {
+  const occupied = useStore((s) => s.occupied)
+  const finalState = useStore((s) => s.finalState)
+  const rack = finalState?.rack ?? 0
+  const NS = 1.1
+  const BG = 3.0
+
+  if (!occupied.length) return null
+
+  const xs = occupied.map((n) => n.n * NS + (n.bed === 'b' ? rack * NS : 0))
+  const midX = xs.reduce((a, b) => a + b, 0) / xs.length
+
+  return (
+    <group>
+      {occupied.map((n) => {
+        const x = n.n * NS + (n.bed === 'b' ? rack * NS : 0) - midX
+        const z = n.bed === 'f' ? -BG / 2 : BG / 2
+        return (
+          <mesh key={n.key} position={[x, -0.35, z]}>
+            <cylinderGeometry args={[0.06, 0.06, 0.25, 8]} />
+            <meshStandardMaterial
+              color={n.loops > 1 ? '#fbbf24' : '#6ee7b7'}
+              emissive={n.loops > 1 ? '#fbbf24' : '#6ee7b7'}
+              emissiveIntensity={0.25}
+              roughness={0.4}
+            />
+          </mesh>
+        )
+      })}
     </group>
   )
 }
@@ -107,6 +143,7 @@ export function YarnPaths() {
   return (
     <group>
       <BedGuides />
+      <NeedleMarkers />
       {yarnPaths.map((path) => (
         <TubeYarn key={path.id} path={path} />
       ))}
