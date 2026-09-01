@@ -238,12 +238,15 @@ export function relaxPaths(
   return result
 }
 
-export function buildGeometry(operations: Operation[], opts?: { courseOffset?: boolean }): YarnPath[] {
+export function buildGeometry(operations: Operation[], opts?: { courseOffset?: boolean; gauge?: number }): YarnPath[] {
+  const gauge = opts?.gauge ?? 1
+  const NS = NEEDLE_SPACING * gauge
+  const SH = STITCH_HEIGHT * gauge
   const paths: YarnPath[] = []
   let rack = 0, courseY = 0, lastDir: '+' | '-' | null = null, stitchIndex = 0, courseIndex = 0
   const onNeedle: Record<string, LiveLoop[]> = {}
-  const localKnit = classicLoopLocal(LOOP_W, LOOP_H, 28, false)
-  const localTuck = classicLoopLocal(LOOP_W, LOOP_H, 18, true)
+  const localKnit = classicLoopLocal(LOOP_W * gauge, LOOP_H * gauge, 28, false)
+  const localTuck = classicLoopLocal(LOOP_W * gauge, LOOP_H * gauge, 18, true)
 
   for (const operation of operations) {
     const { op, args, line, index: opIndex } = operation
@@ -258,7 +261,7 @@ export function buildGeometry(operations: Operation[], opts?: { courseOffset?: b
       if (!stack.length) continue
       const loops = stack.splice(0, stack.length)
       if (!onNeedle[toKey]) onNeedle[toKey] = []
-      const toX = to.n * NEEDLE_SPACING + (to.bed === 'b' ? rack * NEEDLE_SPACING : 0)
+      const toX = to.n * NS + (to.bed === 'b' ? rack * NS : 0)
       const toZ = bedZ(to.bed)
       for (const lp of loops) {
         const fromC = {
@@ -266,14 +269,14 @@ export function buildGeometry(operations: Operation[], opts?: { courseOffset?: b
           y: lp.points.reduce((s, p) => s + p.y, 0) / lp.points.length,
           z: lp.points.reduce((s, p) => s + p.z, 0) / lp.points.length,
         }
-        const toC = { x: toX, y: courseY + 0.12, z: toZ }
+        const toC = { x: toX, y: courseY + 0.12 * gauge, z: toZ }
         const xferPts: YarnPoint[] = []
         for (let i = 0; i <= 16; i++) {
           const t = i / 16
           const ease = t * t * (3 - 2 * t)
           xferPts.push({
             x: fromC.x + (toC.x - fromC.x) * ease,
-            y: fromC.y + (toC.y - fromC.y) * ease + Math.sin(t * Math.PI) * 1.15,
+            y: fromC.y + (toC.y - fromC.y) * ease + Math.sin(t * Math.PI) * 1.15 * gauge,
             z: fromC.z + (toC.z - fromC.z) * ease,
             line, opIndex,
           })
@@ -306,16 +309,16 @@ export function buildGeometry(operations: Operation[], opts?: { courseOffset?: b
       const carrier = args[2] || '7'
       if (!ref) continue
       if (lastDir && dir !== lastDir) {
-        courseY += STITCH_HEIGHT
+        courseY += SH
         courseIndex += 1
       }
       lastDir = dir
       const key = needleKey(ref.bed, ref.n, ref.slider)
-      const x = ref.n * NEEDLE_SPACING + (ref.bed === 'b' ? rack * NEEDLE_SPACING : 0)
+      const x = ref.n * NS + (ref.bed === 'b' ? rack * NS : 0)
       const z = bedZ(ref.bed)
       const isTuck = op === 'tuck'
       const useOffset = opts?.courseOffset !== false
-      const courseOffsetX = useOffset ? (courseIndex % 2 === 1 ? 1 : -1) * NEEDLE_SPACING * 0.12 : 0
+      const courseOffsetX = useOffset ? (courseIndex % 2 === 1 ? 1 : -1) * NS * 0.12 : 0
       const courseOffsetZ = useOffset ? (courseIndex % 2 === 1 ? 0.04 : -0.04) : 0
       let loopPts = placeLoop(isTuck ? localTuck : localKnit, x + courseOffsetX, courseY, z + courseOffsetZ)
       const existing = onNeedle[key] || []
