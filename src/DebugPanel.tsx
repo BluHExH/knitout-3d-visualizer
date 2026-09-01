@@ -19,6 +19,10 @@ export function DebugPanel() {
   const setYarnRadius = useStore((s) => s.setYarnRadius)
   const courseOffset = useStore((s) => s.courseOffset)
   const setCourseOffset = useStore((s) => s.setCourseOffset)
+  const gauge = useStore((s) => s.gauge)
+  const setGauge = useStore((s) => s.setGauge)
+  const showNeedleLabels = useStore((s) => s.showNeedleLabels)
+  const setShowNeedleLabels = useStore((s) => s.setShowNeedleLabels)
   const run = useStore((s) => s.run)
 
   const errorCount = errors.filter((e) => e.severity === 'error').length
@@ -55,6 +59,15 @@ export function DebugPanel() {
             <span>Yarn thickness</span>
             <input type="range" min={0.5} max={1.6} step={0.05} value={yarnRadius} onChange={(e) => setYarnRadius(parseFloat(e.target.value))} />
             <span className="slider-val">{yarnRadius.toFixed(2)}</span>
+          </label>
+          <label className="toggle slider-row">
+            <span>Gauge (spacing)</span>
+            <input type="range" min={0.6} max={1.5} step={0.05} value={gauge} onChange={(e) => setGauge(parseFloat(e.target.value))} />
+            <span className="slider-val">{gauge.toFixed(2)}</span>
+          </label>
+          <label className="toggle">
+            <input type="checkbox" checked={showNeedleLabels} onChange={(e) => setShowNeedleLabels(e.target.checked)} />
+            Needle labels
           </label>
           <button className="debug-clear" onClick={() => run()} title="Rebuild geometry with current settings">
             Rebuild geometry
