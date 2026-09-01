@@ -31,6 +31,8 @@ type State = {
   ghostPast: boolean
   highlightCurrentOnly: boolean
   physicsIters: number
+  yarnRadius: number
+  courseOffset: boolean
   setCode: (c: string) => void
   setSelectedLine: (l: number | null) => void
   setJumpToLine: (l: number | null) => void
@@ -38,6 +40,8 @@ type State = {
   setShowUpToOp: (i: number | null) => void
   setGhostPast: (v: boolean) => void
   setHighlightCurrentOnly: (v: boolean) => void
+  setYarnRadius: (v: number) => void
+  setCourseOffset: (v: boolean) => void
   selectYarn: (id: string | null, line?: number | null) => void
   run: () => void
   relax: () => void
@@ -51,11 +55,20 @@ type State = {
 
 const DEFAULT_CODE = `;!knitout-2
 ;;Carriers: 1 2 3 4 5 6 7 8 9 10
+;; bigger sample: 8 needles, multi-course plain + transfer band
 inhook 7
+tuck - f7 7
+tuck - f5 7
 tuck - f3 7
 tuck - f1 7
 tuck + f0 7
 tuck + f2 7
+tuck + f4 7
+tuck + f6 7
+knit - f7 7
+knit - f6 7
+knit - f5 7
+knit - f4 7
 knit - f3 7
 knit - f2 7
 knit - f1 7
@@ -65,22 +78,74 @@ knit + f0 7
 knit + f1 7
 knit + f2 7
 knit + f3 7
-xfer f0 b0
-xfer f1 b1
-xfer f2 b2
-xfer f3 b3
-knit - b3 7
-knit - b2 7
-knit - b1 7
-knit - b0 7
-xfer b0 f0
-xfer b1 f1
-xfer b2 f2
-xfer b3 f3
+knit + f4 7
+knit + f5 7
+knit + f6 7
+knit + f7 7
+knit - f7 7
+knit - f6 7
+knit - f5 7
+knit - f4 7
+knit - f3 7
+knit - f2 7
+knit - f1 7
+knit - f0 7
 knit + f0 7
 knit + f1 7
 knit + f2 7
 knit + f3 7
+knit + f4 7
+knit + f5 7
+knit + f6 7
+knit + f7 7
+xfer f0 b0
+xfer f1 b1
+xfer f2 b2
+xfer f3 b3
+xfer f4 b4
+xfer f5 b5
+xfer f6 b6
+xfer f7 b7
+knit - b7 7
+knit - b6 7
+knit - b5 7
+knit - b4 7
+knit - b3 7
+knit - b2 7
+knit - b1 7
+knit - b0 7
+knit + b0 7
+knit + b1 7
+knit + b2 7
+knit + b3 7
+knit + b4 7
+knit + b5 7
+knit + b6 7
+knit + b7 7
+xfer b0 f0
+xfer b1 f1
+xfer b2 f2
+xfer b3 f3
+xfer b4 f4
+xfer b5 f5
+xfer b6 f6
+xfer b7 f7
+knit - f7 7
+knit - f6 7
+knit - f5 7
+knit - f4 7
+knit - f3 7
+knit - f2 7
+knit - f1 7
+knit - f0 7
+knit + f0 7
+knit + f1 7
+knit + f2 7
+knit + f3 7
+knit + f4 7
+knit + f5 7
+knit + f6 7
+knit + f7 7
 outhook 7
 `
 
@@ -104,6 +169,8 @@ export const useStore = create<State>((set, get) => ({
   ghostPast: true,
   highlightCurrentOnly: false,
   physicsIters: 56,
+  yarnRadius: 1,
+  courseOffset: true,
 
   setCode: (code) => set({ code }),
   setSelectedLine: (line) => set({ selectedLine: line }),
@@ -112,6 +179,8 @@ export const useStore = create<State>((set, get) => ({
   setShowUpToOp: (i) => set({ showUpToOp: i }),
   setGhostPast: (v) => set({ ghostPast: v }),
   setHighlightCurrentOnly: (v) => set({ highlightCurrentOnly: v }),
+  setYarnRadius: (v) => set({ yarnRadius: Math.min(1.8, Math.max(0.45, v)) }),
+  setCourseOffset: (v) => set({ courseOffset: v }),
   selectYarn: (id, line = null) =>
     set({ selectedYarnId: id, selectedLine: line ?? null, jumpToLine: line ?? null }),
 
@@ -128,7 +197,7 @@ export const useStore = create<State>((set, get) => ({
     })
     try {
       const { operations, errors, finalState } = interpretKnitout(code)
-      let yarnPaths = buildGeometry(operations)
+      let yarnPaths = buildGeometry(operations, { courseOffset: get().courseOffset })
       yarnPaths = linkCarrierPaths(yarnPaths)
       yarnPaths = relaxPaths(yarnPaths, physicsIters)
       set({
