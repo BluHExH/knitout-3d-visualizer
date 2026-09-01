@@ -5,7 +5,7 @@ export type YarnPoint = {
   y: number
   z: number
   carrier?: string
-  line: number // 1-based
+  line: number
 }
 
 export type YarnPath = {
@@ -15,6 +15,8 @@ export type YarnPath = {
   color: string
   lines: number[]
   kind: 'yarn' | 'transfer'
+  /** Primary source line for this stitch segment */
+  primaryLine: number
 }
 
 type State = {
@@ -25,12 +27,15 @@ type State = {
   error: string | null
   isRunning: boolean
   jumpToLine: number | null
+  relaxed: boolean
 
   setCode: (code: string) => void
   setSelectedLine: (line: number | null) => void
   setJumpToLine: (line: number | null) => void
   selectYarn: (id: string | null, line?: number | null) => void
   run: () => void
+  relax: () => void
+  exportOBJ: () => void
 }
 
 const DEFAULT_CODE = `;!knitout-2
@@ -94,8 +99,8 @@ const STITCH_HEIGHT = 0.95
 
 type NeedleKey = string
 
-function needleKey(bed: string, n: number, slider = false): NeedleKey {
-  return `${bed}${slider ? 's' : ''}${n}`
+function needleKey(bed: string, n: number): NeedleKey {
+  return `${bed}${n}`
 }
 
 function parseNeedle(raw: string): { bed: string; n: number; slider: boolean } | null {
@@ -112,41 +117,44 @@ function bedZ(bed: string): number {
   return bed === 'f' ? -BED_GAP / 2 : BED_GAP / 2
 }
 
-/**
- * Improved topological placement:
- * - Front / back beds clearly separated in Z
- * - Each course advances Y
- * - Stitches get a proper loop shape
- * - Transfers drawn as arcs between beds
- */
+/** Simple Laplacian relaxation — softens loops while keeping structure */
+function relaxPaths(paths: YarnPath[], iterations = 12, alpha = 0.28): YarnPath[] {
+  const result = paths.map((p) => ({
+    ...p,
+    points: p.points.map((pt) => ({ ...pt })),
+  }))
+
+  for (let iter = 0; iter < iterations; iter++) {
+    for (const path of result) {
+      if (path.kind === 'transfer' || path.points.length < 3) continue
+      const pts = path.points
+      const next = pts.map((p) => ({ ...p }))
+
+      for (let i = 1; i < pts.length - 1; i++) {
+        const isAnchor = i % 9 === 0
+        const a = isAnchor ? alpha * 0.35 : alpha
+        next[i].x = pts[i].x + a * ((pts[i - 1].x + pts[i + 1].x) * 0.5 - pts[i].x)
+        next[i].y = pts[i].y + a * ((pts[i - 1].y + pts[i + 1].y) * 0.5 - pts[i].y)
+        next[i].z = pts[i].z + a * ((pts[i - 1].z + pts[i + 1].z) * 0.5 - pts[i].z)
+      }
+      path.points = next
+    }
+  }
+  return result
+}
+
 function parseAndBuildYarnPaths(code: string): { paths: YarnPath[]; error: string | null } {
   const lines = code.split('\n')
   const paths: YarnPath[] = []
 
   let currentCarrier = '7'
-  let currentPath: YarnPath | null = null
   let rack = 0
   let courseY = 0
   let lastNeedle: { bed: string; n: number } | null = null
   let dir: '+' | '-' = '+'
+  let stitchIndex = 0
 
   const needlePos: Record<NeedleKey, { x: number; y: number; z: number }> = {}
-
-  const ensurePath = (carrier: string, lineNum: number) => {
-    if (!currentPath || currentPath.carrier !== carrier || currentPath.kind !== 'yarn') {
-      currentPath = {
-        id: `yarn-${carrier}-${lineNum}`,
-        carrier,
-        points: [],
-        color: CARRIER_COLORS[carrier] || '#aaaaaa',
-        lines: [],
-        kind: 'yarn',
-      }
-      paths.push(currentPath)
-    }
-    if (!currentPath.lines.includes(lineNum)) currentPath.lines.push(lineNum)
-    return currentPath
-  }
 
   const addStitch = (
     bed: string,
@@ -155,7 +163,16 @@ function parseAndBuildYarnPaths(code: string): { paths: YarnPath[]; error: strin
     lineNum: number,
     isTuck = false
   ) => {
-    const path = ensurePath(carrier, lineNum)
+    const path: YarnPath = {
+      id: `stitch-${carrier}-${lineNum}-${stitchIndex++}`,
+      carrier,
+      points: [],
+      color: CARRIER_COLORS[carrier] || '#aaaaaa',
+      lines: [lineNum],
+      kind: 'yarn',
+      primaryLine: lineNum,
+    }
+
     const x = n * NEEDLE_SPACING + (bed === 'b' ? rack * NEEDLE_SPACING : 0)
     const z = bedZ(bed)
     const y = courseY
@@ -179,6 +196,7 @@ function parseAndBuildYarnPaths(code: string): { paths: YarnPath[]; error: strin
       path.points.push({ x: px, y: py, z: pz, carrier, line: lineNum })
     }
 
+    paths.push(path)
     needlePos[needleKey(bed, n)] = { x, y, z }
     lastNeedle = { bed, n }
   }
@@ -208,6 +226,7 @@ function parseAndBuildYarnPaths(code: string): { paths: YarnPath[]; error: strin
       color: '#fbbf24',
       lines: [lineNum],
       kind: 'transfer',
+      primaryLine: lineNum,
       points: [],
     }
 
@@ -237,10 +256,7 @@ function parseAndBuildYarnPaths(code: string): { paths: YarnPath[]; error: strin
 
       if (op === 'inhook' || op === 'in') {
         currentCarrier = parts[1] || '7'
-        currentPath = null
-      } else if (op === 'outhook' || op === 'out') {
-        currentPath = null
-      } else if (op === 'releasehook') {
+      } else if (op === 'outhook' || op === 'out' || op === 'releasehook') {
         // no geometry
       } else if (op === 'tuck' || op === 'knit' || op === 'miss') {
         const d = parts[1] as '+' | '-'
@@ -269,10 +285,7 @@ function parseAndBuildYarnPaths(code: string): { paths: YarnPath[]; error: strin
     }
 
     if (paths.length > 0) {
-      let minY = Infinity
-      let maxY = -Infinity
-      let minX = Infinity
-      let maxX = -Infinity
+      let minY = Infinity, maxY = -Infinity, minX = Infinity, maxX = -Infinity
       for (const p of paths) {
         for (const pt of p.points) {
           minY = Math.min(minY, pt.y)
@@ -297,6 +310,24 @@ function parseAndBuildYarnPaths(code: string): { paths: YarnPath[]; error: strin
   }
 }
 
+function pathsToOBJ(paths: YarnPath[]): string {
+  const lines: string[] = ['# Knitout 3D Visualizer export', 'o knitout']
+  let vertexOffset = 1
+
+  for (const path of paths) {
+    if (path.points.length < 2) continue
+    lines.push(`g ${path.id}`)
+    for (const p of path.points) {
+      lines.push(`v ${p.x.toFixed(4)} ${p.y.toFixed(4)} ${p.z.toFixed(4)}`)
+    }
+    for (let i = 0; i < path.points.length - 1; i++) {
+      lines.push(`l ${vertexOffset + i} ${vertexOffset + i + 1}`)
+    }
+    vertexOffset += path.points.length
+  }
+  return lines.join('\n')
+}
+
 export const useStore = create<State>((set, get) => ({
   code: DEFAULT_CODE,
   yarnPaths: [],
@@ -305,6 +336,7 @@ export const useStore = create<State>((set, get) => ({
   error: null,
   isRunning: false,
   jumpToLine: null,
+  relaxed: false,
 
   setCode: (code) => set({ code }),
   setSelectedLine: (line) => set({ selectedLine: line }),
@@ -316,8 +348,28 @@ export const useStore = create<State>((set, get) => ({
 
   run: () => {
     const { code } = get()
-    set({ isRunning: true, error: null, selectedLine: null, selectedYarnId: null })
+    set({ isRunning: true, error: null, selectedLine: null, selectedYarnId: null, relaxed: false })
     const { paths, error } = parseAndBuildYarnPaths(code)
     set({ yarnPaths: paths, error, isRunning: false })
+  },
+
+  relax: () => {
+    const { yarnPaths } = get()
+    if (yarnPaths.length === 0) return
+    const relaxed = relaxPaths(yarnPaths, 14, 0.3)
+    set({ yarnPaths: relaxed, relaxed: true })
+  },
+
+  exportOBJ: () => {
+    const { yarnPaths } = get()
+    if (yarnPaths.length === 0) return
+    const obj = pathsToOBJ(yarnPaths)
+    const blob = new Blob([obj], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'knitout-export.obj'
+    a.click()
+    URL.revokeObjectURL(url)
   },
 }))
