@@ -126,7 +126,6 @@ export function interpretKnitout(code: string): {
       else state.carriersIn.add(carrier)
       currentCarrier = carrier || currentCarrier
       record()
-      opSummaries.push({ opIndex: opIndex - 1, line, message: `in ${carrier}` })
       continue
     }
 
@@ -137,14 +136,11 @@ export function interpretKnitout(code: string): {
       else state.carriersIn.delete(carrier)
       if (currentCarrier === carrier) currentCarrier = null
       record()
-      opSummaries.push({ opIndex: opIndex - 1, line, message: `out ${carrier}` })
       continue
     }
 
     if (op === 'releasehook') {
-      carrier = args[0]
       record()
-      opSummaries.push({ opIndex: opIndex - 1, line, message: `releasehook ${carrier || ''}` })
       continue
     }
 
@@ -153,7 +149,6 @@ export function interpretKnitout(code: string): {
       if (Number.isNaN(r)) err(line, `rack: invalid value ${args[0]}`)
       else state.rack = r
       record()
-      opSummaries.push({ opIndex: opIndex - 1, line, message: `rack ${state.rack}` })
       continue
     }
 
@@ -161,28 +156,22 @@ export function interpretKnitout(code: string): {
       const from = parseNeedle(args[0])
       const to = parseNeedle(args[1])
       if (!from || !to) {
-        err(line, `xfer: bad needles ${args[0]} ${args[1]}`)
+        err(line, `xfer: bad needles`)
         record()
         continue
       }
       const fromKey = needleKey(from.bed, from.n, from.slider)
       const toKey = needleKey(to.bed, to.n, to.slider)
       needles.push(fromKey, toKey)
-
       const src = ensureNeedle(state, fromKey)
       const dst = ensureNeedle(state, toKey)
       const srcStack = stack(src, from.slider)
       const dstStack = stack(dst, to.slider)
-
-      if (srcStack.length === 0) {
-        err(line, `xfer: ${fromKey} is empty`)
-      } else {
-        while (srcStack.length) {
-          dstStack.push(srcStack.pop()!)
-        }
+      if (srcStack.length === 0) err(line, `xfer: ${fromKey} is empty`)
+      else {
+        while (srcStack.length) dstStack.push(srcStack.pop()!)
       }
       record()
-      opSummaries.push({ opIndex: opIndex - 1, line, message: `xfer ${fromKey} → ${toKey}` })
       continue
     }
 
@@ -191,40 +180,24 @@ export function interpretKnitout(code: string): {
       const needleRaw = args[1]
       carrier = args[2] || currentCarrier || undefined
       const ref = parseNeedle(needleRaw)
-
       if (dir !== '+' && dir !== '-') err(line, `${op}: direction must be + or -`)
       if (!ref) err(line, `${op}: bad needle ${needleRaw}`)
       if (!carrier) err(line, `${op}: missing carrier`)
       else if (!state.carriersIn.has(carrier)) err(line, `Carrier ${carrier} is not brought in`, 'warning')
-
       if (ref) {
         const key = needleKey(ref.bed, ref.n, ref.slider)
         needles.push(key)
         const ns = ensureNeedle(state, key)
         const st = stack(ns, ref.slider)
-
-        if (op === 'miss') {
-          // no loop change
-        } else if (op === 'tuck') {
-          if (carrier) st.push(newLoop(carrier, opIndex, line))
-        } else if (op === 'knit') {
-          if (st.length === 0) {
-            err(line, `knit on empty needle ${key}`, 'warning')
-          } else {
-            st.pop()
-          }
+        if (op === 'tuck' && carrier) st.push(newLoop(carrier, opIndex, line))
+        else if (op === 'knit') {
+          if (st.length === 0) err(line, `knit on empty needle ${key}`, 'warning')
+          else st.pop()
           if (carrier) st.push(newLoop(carrier, opIndex, line))
         }
-
         state.direction = dir
       }
-
       record()
-      opSummaries.push({
-        opIndex: opIndex - 1,
-        line,
-        message: `${op} ${dir} ${needleRaw || ''} ${carrier || ''}`,
-      })
       continue
     }
 
@@ -234,8 +207,7 @@ export function interpretKnitout(code: string): {
       else {
         const key = needleKey(ref.bed, ref.n, ref.slider)
         needles.push(key)
-        const ns = ensureNeedle(state, key)
-        const st = stack(ns, ref.slider)
+        const st = stack(ensureNeedle(state, key), ref.slider)
         if (st.length === 0) err(line, `drop: ${key} already empty`, 'warning')
         else st.length = 0
       }
@@ -244,12 +216,12 @@ export function interpretKnitout(code: string): {
     }
 
     if (op === 'amiss' || op === 'split') {
-      err(line, `${op} is recognized but not fully simulated yet`, 'warning')
+      err(line, `${op} not fully simulated yet`, 'warning')
       record()
       continue
     }
 
-    if (op === 'x-stitch-number' || op === 'x-speed-number' || op === 'x-carrier-spacing') {
+    if (op.startsWith('x-')) {
       record()
       continue
     }
@@ -263,7 +235,7 @@ export function interpretKnitout(code: string): {
       severity: 'warning',
       line: lines.length,
       opIndex: operations.length,
-      message: `Carrier ${c} still in at end of file (missing out/outhook?)`,
+      message: `Carrier ${c} still in at end of file`,
     })
   }
 
