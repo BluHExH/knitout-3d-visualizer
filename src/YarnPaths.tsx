@@ -6,10 +6,12 @@ function TubeYarn({ path }: { path: YarnPath }) {
   const meshRef = useRef<THREE.Mesh>(null)
   const selectedLine = useStore((s) => s.selectedLine)
   const selectedYarnId = useStore((s) => s.selectedYarnId)
+  const selectedOpIndex = useStore((s) => s.selectedOpIndex)
   const selectYarn = useStore((s) => s.selectYarn)
 
   const isHighlighted =
     selectedYarnId === path.id ||
+    (selectedOpIndex !== null && path.opIndex === selectedOpIndex) ||
     (selectedLine !== null &&
       (path.primaryLine === selectedLine || path.lines.includes(selectedLine)))
 
@@ -23,7 +25,6 @@ function TubeYarn({ path }: { path: YarnPath }) {
 
     const curvePoints = path.points.map((p) => new THREE.Vector3(p.x, p.y, p.z))
     const curve = new THREE.CatmullRomCurve3(curvePoints, false, 'catmullrom', 0.2)
-
     const tubularSegments = Math.max(16, path.points.length * 3)
     const geometry = new THREE.TubeGeometry(curve, tubularSegments, radius, 7, false)
 
@@ -45,11 +46,6 @@ function TubeYarn({ path }: { path: YarnPath }) {
     material.opacity = isHighlighted ? 1 : isTransfer ? 0.7 : 0.92
   }
 
-  const handleClick = (e: any) => {
-    e.stopPropagation()
-    selectYarn(path.id, path.primaryLine)
-  }
-
   return (
     <mesh
       ref={meshRef}
@@ -57,7 +53,10 @@ function TubeYarn({ path }: { path: YarnPath }) {
       material={material}
       castShadow={!isTransfer}
       receiveShadow
-      onClick={handleClick}
+      onClick={(e) => {
+        e.stopPropagation()
+        selectYarn(path.id, path.primaryLine)
+      }}
       onPointerOver={() => (document.body.style.cursor = 'pointer')}
       onPointerOut={() => (document.body.style.cursor = 'default')}
       scale={isHighlighted ? 1.25 : 1}
@@ -82,7 +81,6 @@ function BedGuides() {
 
 export function YarnPaths() {
   const yarnPaths = useStore((s) => s.yarnPaths)
-
   return (
     <group>
       <BedGuides />
