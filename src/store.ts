@@ -1,78 +1,49 @@
 import { create } from 'zustand'
+import { interpretKnitout, occupiedNeedles, type MachineError, type Operation, type MachineSnapshot, parseNeedle, needleKey } from './machine'
 
-export type YarnPoint = {
-  x: number
-  y: number
-  z: number
-  carrier?: string
-  line: number
-}
-
-export type YarnPath = {
-  id: string
-  carrier: string
-  points: YarnPoint[]
-  color: string
-  lines: number[]
-  kind: 'yarn' | 'transfer'
-  /** Primary source line for this stitch segment */
-  primaryLine: number
-}
+export type YarnPoint = { x: number; y: number; z: number; carrier?: string; line: number; opIndex?: number }
+export type YarnPath = { id: string; carrier: string; points: YarnPoint[]; color: string; lines: number[]; kind: 'yarn' | 'transfer'; primaryLine: number; opIndex?: number }
 
 type State = {
-  code: string
-  yarnPaths: YarnPath[]
-  selectedLine: number | null
-  selectedYarnId: string | null
-  error: string | null
-  isRunning: boolean
-  jumpToLine: number | null
-  relaxed: boolean
-
-  setCode: (code: string) => void
-  setSelectedLine: (line: number | null) => void
-  setJumpToLine: (line: number | null) => void
-  selectYarn: (id: string | null, line?: number | null) => void
-  run: () => void
-  relax: () => void
-  exportOBJ: () => void
+  code: string; yarnPaths: YarnPath[]; operations: Operation[]; errors: MachineError[]
+  finalState: MachineSnapshot | null; occupied: ReturnType<typeof occupiedNeedles>
+  selectedLine: number | null; selectedYarnId: string | null; selectedOpIndex: number | null
+  error: string | null; isRunning: boolean; jumpToLine: number | null; relaxed: boolean
+  isPlaying: boolean; playSpeedMs: number
+  setCode: (c: string) => void; setSelectedLine: (l: number | null) => void; setJumpToLine: (l: number | null) => void
+  setSelectedOpIndex: (i: number | null) => void; selectYarn: (id: string | null, line?: number | null) => void
+  run: () => void; relax: () => void; exportOBJ: () => void
+  play: () => void; pause: () => void; stepNext: () => void; stepPrev: () => void; stopPlay: () => void
 }
 
 const DEFAULT_CODE = `;!knitout-2
 ;;Carriers: 1 2 3 4 5 6 7 8 9 10
 inhook 7
-; alternating tucks cast-on
 tuck - f3 7
 tuck - f1 7
 tuck + f0 7
 tuck + f2 7
-; first course
 knit - f3 7
 knit - f2 7
 knit - f1 7
 knit - f0 7
 releasehook 7
-; second course
 knit + f0 7
 knit + f1 7
 knit + f2 7
 knit + f3 7
-; transfers to back bed
 xfer f0 b0
 xfer f1 b1
 xfer f2 b2
 xfer f3 b3
-; knit on back
 knit - b3 7
 knit - b2 7
 knit - b1 7
 knit - b0 7
-; transfer back to front
 xfer b0 f0
 xfer b1 f1
 xfer b2 f2
 xfer b3 f3
-; final course
 knit + f0 7
 knit + f1 7
 knit + f2 7
@@ -80,62 +51,93 @@ knit + f3 7
 outhook 7
 `
 
-const CARRIER_COLORS: Record<string, string> = {
-  '1': '#ef4444',
-  '2': '#f97316',
-  '3': '#eab308',
-  '4': '#22c55e',
-  '5': '#14b8a6',
-  '6': '#06b6d4',
-  '7': '#3b82f6',
-  '8': '#8b5cf6',
-  '9': '#ec4899',
-  '10': '#f43f5e',
+const COLORS: Record<string, string> = {
+  '1': '#ef4444', '2': '#f97316', '3': '#eab308', '4': '#22c55e', '5': '#14b8a6',
+  '6': '#06b6d4', '7': '#3b82f6', '8': '#8b5cf6', '9': '#ec4899', '10': '#f43f5e',
 }
+const NS = 1.2, BG = 3.4, SH = 1.05
+const bedZ = (b: string) => (b === 'f' ? -BG / 2 : BG / 2)
 
-const NEEDLE_SPACING = 1.15
-const BED_GAP = 3.2
-const STITCH_HEIGHT = 0.95
-
-type NeedleKey = string
-
-function needleKey(bed: string, n: number): NeedleKey {
-  return `${bed}${n}`
-}
-
-function parseNeedle(raw: string): { bed: string; n: number; slider: boolean } | null {
-  const m = raw?.match(/^(f|b)(s?)(-?\d+)$/i)
-  if (!m) return null
-  return {
-    bed: m[1].toLowerCase(),
-    slider: m[2] === 's',
-    n: parseInt(m[3], 10),
+function makeLoop(cx: number, cy: number, cz: number, w = 0.42, h = 0.55, n = 14) {
+  const pts: YarnPoint[] = []
+  for (let i = 0; i <= n; i++) {
+    const t = (i / n) * Math.PI * 2
+    pts.push({ x: cx + Math.cos(t) * w, y: cy + Math.sin(t) * h * 0.85 + (Math.sin(t) > 0 ? 0.08 : -0.12), z: cz, line: 0 })
   }
+  return pts
 }
 
-function bedZ(bed: string): number {
-  return bed === 'f' ? -BED_GAP / 2 : BED_GAP / 2
+function buildGeometry(operations: Operation[]): YarnPath[] {
+  const paths: YarnPath[] = []
+  let rack = 0, courseY = 0, lastDir: '+' | '-' | null = null, idx = 0
+  const onNeedle: Record<string, { pts: { x: number; y: number; z: number }[] }> = {}
+
+  for (const op of operations) {
+    if (op.op === 'rack') { rack = parseFloat(op.args[0]) || 0; continue }
+    if (op.op === 'xfer') {
+      const from = parseNeedle(op.args[0]), to = parseNeedle(op.args[1])
+      if (!from || !to) continue
+      const fk = needleKey(from.bed, from.n, from.slider), tk = needleKey(to.bed, to.n, to.slider)
+      const live = onNeedle[fk]
+      if (!live) continue
+      delete onNeedle[fk]
+      const tx = to.n * NS + (to.bed === 'b' ? rack * NS : 0), tz = bedZ(to.bed)
+      const fc = live.pts.reduce((a, p) => ({ x: a.x + p.x / live.pts.length, y: a.y + p.y / live.pts.length, z: a.z + p.z / live.pts.length }), { x: 0, y: 0, z: 0 })
+      const xferPts: YarnPoint[] = []
+      for (let i = 0; i <= 10; i++) {
+        const t = i / 10
+        xferPts.push({ x: fc.x + (tx - fc.x) * t, y: fc.y + (courseY + 0.2 - fc.y) * t + Math.sin(t * Math.PI) * 0.9, z: fc.z + (tz - fc.z) * t, line: op.line, opIndex: op.index })
+      }
+      paths.push({ id: `xfer-${op.index}`, carrier: 'xfer', color: '#fbbf24', lines: [op.line], kind: 'transfer', primaryLine: op.line, opIndex: op.index, points: xferPts })
+      const loop = makeLoop(tx, courseY, tz)
+      onNeedle[tk] = { pts: loop }
+      continue
+    }
+    if (op.op === 'knit' || op.op === 'tuck') {
+      const dir = op.args[0] as '+' | '-'
+      const ref = parseNeedle(op.args[1])
+      const carrier = op.args[2] || '7'
+      if (!ref) continue
+      if (lastDir && dir !== lastDir) courseY += SH
+      lastDir = dir
+      const key = needleKey(ref.bed, ref.n, ref.slider)
+      const x = ref.n * NS + (ref.bed === 'b' ? rack * NS : 0)
+      const z = bedZ(ref.bed)
+      const isTuck = op.op === 'tuck'
+      let loop = makeLoop(x, courseY, z, isTuck ? 0.3 : 0.42, isTuck ? 0.4 : 0.55)
+      const prev = onNeedle[key]
+      if (prev && !isTuck) {
+        const cy = prev.pts.reduce((s, p) => s + p.y, 0) / prev.pts.length
+        loop = loop.map((p) => (p.y < courseY ? { ...p, y: Math.min(p.y, cy - 0.1) } : p))
+      }
+      for (const p of loop) { p.line = op.line; p.opIndex = op.index; p.carrier = carrier }
+      paths.push({ id: `s-${op.index}-${idx++}`, carrier, color: COLORS[carrier] || '#aaa', lines: [op.line], kind: 'yarn', primaryLine: op.line, opIndex: op.index, points: loop })
+      onNeedle[key] = { pts: loop }
+    }
+  }
+  if (paths.length) {
+    let minY = Infinity, maxY = -Infinity, minX = Infinity, maxX = -Infinity
+    for (const p of paths) for (const pt of p.points) {
+      minY = Math.min(minY, pt.y); maxY = Math.max(maxY, pt.y)
+      minX = Math.min(minX, pt.x); maxX = Math.max(maxX, pt.x)
+    }
+    const my = (minY + maxY) / 2, mx = (minX + maxX) / 2
+    for (const p of paths) for (const pt of p.points) { pt.y -= my; pt.x -= mx }
+  }
+  return paths
 }
 
-/** Simple Laplacian relaxation — softens loops while keeping structure */
-function relaxPaths(paths: YarnPath[], iterations = 12, alpha = 0.28): YarnPath[] {
-  const result = paths.map((p) => ({
-    ...p,
-    points: p.points.map((pt) => ({ ...pt })),
-  }))
-
+function relaxPaths(paths: YarnPath[], iterations = 30): YarnPath[] {
+  const result = paths.map((p) => ({ ...p, points: p.points.map((pt) => ({ ...pt })) }))
   for (let iter = 0; iter < iterations; iter++) {
     for (const path of result) {
-      if (path.kind === 'transfer' || path.points.length < 3) continue
+      if (path.points.length < 3) continue
       const pts = path.points
       const next = pts.map((p) => ({ ...p }))
-
       for (let i = 1; i < pts.length - 1; i++) {
-        const isAnchor = i % 9 === 0
-        const a = isAnchor ? alpha * 0.35 : alpha
-        next[i].x = pts[i].x + a * ((pts[i - 1].x + pts[i + 1].x) * 0.5 - pts[i].x)
-        next[i].y = pts[i].y + a * ((pts[i - 1].y + pts[i + 1].y) * 0.5 - pts[i].y)
-        next[i].z = pts[i].z + a * ((pts[i - 1].z + pts[i + 1].z) * 0.5 - pts[i].z)
+        next[i].x = pts[i].x + 0.35 * ((pts[i - 1].x + pts[i + 1].x) * 0.5 - pts[i].x)
+        next[i].y = pts[i].y + 0.35 * ((pts[i - 1].y + pts[i + 1].y) * 0.5 - pts[i].y) - 0.008
+        next[i].z = pts[i].z + 0.35 * ((pts[i - 1].z + pts[i + 1].z) * 0.5 - pts[i].z)
       }
       path.points = next
     }
@@ -143,233 +145,82 @@ function relaxPaths(paths: YarnPath[], iterations = 12, alpha = 0.28): YarnPath[
   return result
 }
 
-function parseAndBuildYarnPaths(code: string): { paths: YarnPath[]; error: string | null } {
-  const lines = code.split('\n')
-  const paths: YarnPath[] = []
-
-  let currentCarrier = '7'
-  let rack = 0
-  let courseY = 0
-  let lastNeedle: { bed: string; n: number } | null = null
-  let dir: '+' | '-' = '+'
-  let stitchIndex = 0
-
-  const needlePos: Record<NeedleKey, { x: number; y: number; z: number }> = {}
-
-  const addStitch = (
-    bed: string,
-    n: number,
-    carrier: string,
-    lineNum: number,
-    isTuck = false
-  ) => {
-    const path: YarnPath = {
-      id: `stitch-${carrier}-${lineNum}-${stitchIndex++}`,
-      carrier,
-      points: [],
-      color: CARRIER_COLORS[carrier] || '#aaaaaa',
-      lines: [lineNum],
-      kind: 'yarn',
-      primaryLine: lineNum,
-    }
-
-    const x = n * NEEDLE_SPACING + (bed === 'b' ? rack * NEEDLE_SPACING : 0)
-    const z = bedZ(bed)
-    const y = courseY
-
-    const w = isTuck ? 0.28 : 0.38
-    const h = isTuck ? 0.32 : 0.48
-
-    const pts: [number, number, number][] = [
-      [x - w, y - h * 0.15, z],
-      [x - w * 0.7, y + h * 0.35, z],
-      [x, y + h * 0.55, z],
-      [x + w * 0.7, y + h * 0.35, z],
-      [x + w, y - h * 0.15, z],
-      [x + w * 0.4, y - h * 0.45, z],
-      [x, y - h * 0.35, z],
-      [x - w * 0.4, y - h * 0.45, z],
-      [x - w, y - h * 0.15, z],
-    ]
-
-    for (const [px, py, pz] of pts) {
-      path.points.push({ x: px, y: py, z: pz, carrier, line: lineNum })
-    }
-
-    paths.push(path)
-    needlePos[needleKey(bed, n)] = { x, y, z }
-    lastNeedle = { bed, n }
-  }
-
-  const addTransfer = (
-    from: { bed: string; n: number },
-    to: { bed: string; n: number },
-    lineNum: number
-  ) => {
-    const fromKey = needleKey(from.bed, from.n)
-    const toKey = needleKey(to.bed, to.n)
-
-    const fromP = needlePos[fromKey] || {
-      x: from.n * NEEDLE_SPACING,
-      y: courseY,
-      z: bedZ(from.bed),
-    }
-    const toP = {
-      x: to.n * NEEDLE_SPACING + (to.bed === 'b' ? rack * NEEDLE_SPACING : 0),
-      y: courseY + 0.15,
-      z: bedZ(to.bed),
-    }
-
-    const transferPath: YarnPath = {
-      id: `xfer-${lineNum}`,
-      carrier: 'xfer',
-      color: '#fbbf24',
-      lines: [lineNum],
-      kind: 'transfer',
-      primaryLine: lineNum,
-      points: [],
-    }
-
-    const steps = 10
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps
-      const x = fromP.x + (toP.x - fromP.x) * t
-      const z = fromP.z + (toP.z - fromP.z) * t
-      const lift = Math.sin(t * Math.PI) * 0.9
-      const y = fromP.y + (toP.y - fromP.y) * t + lift
-      transferPath.points.push({ x, y, z, line: lineNum })
-    }
-
-    paths.push(transferPath)
-    needlePos[toKey] = toP
-    delete needlePos[fromKey]
-  }
-
-  try {
-    for (let i = 0; i < lines.length; i++) {
-      const lineNum = i + 1
-      const raw = lines[i].trim()
-      if (!raw || raw.startsWith(';')) continue
-
-      const parts = raw.split(/\s+/)
-      const op = parts[0].toLowerCase()
-
-      if (op === 'inhook' || op === 'in') {
-        currentCarrier = parts[1] || '7'
-      } else if (op === 'outhook' || op === 'out' || op === 'releasehook') {
-        // no geometry
-      } else if (op === 'tuck' || op === 'knit' || op === 'miss') {
-        const d = parts[1] as '+' | '-'
-        const needleRaw = parts[2]
-        const carrier = parts[3] || currentCarrier
-        const parsed = parseNeedle(needleRaw)
-        if (!parsed) continue
-
-        if (lastNeedle && d !== dir) {
-          courseY += STITCH_HEIGHT
-        }
-        dir = d
-
-        if (op === 'miss') {
-          lastNeedle = { bed: parsed.bed, n: parsed.n }
-        } else {
-          addStitch(parsed.bed, parsed.n, carrier, lineNum, op === 'tuck')
-        }
-      } else if (op === 'xfer') {
-        const from = parseNeedle(parts[1])
-        const to = parseNeedle(parts[2])
-        if (from && to) addTransfer(from, to, lineNum)
-      } else if (op === 'rack') {
-        rack = parseFloat(parts[1] || '0')
-      }
-    }
-
-    if (paths.length > 0) {
-      let minY = Infinity, maxY = -Infinity, minX = Infinity, maxX = -Infinity
-      for (const p of paths) {
-        for (const pt of p.points) {
-          minY = Math.min(minY, pt.y)
-          maxY = Math.max(maxY, pt.y)
-          minX = Math.min(minX, pt.x)
-          maxX = Math.max(maxX, pt.x)
-        }
-      }
-      const midY = (minY + maxY) / 2
-      const midX = (minX + maxX) / 2
-      for (const p of paths) {
-        for (const pt of p.points) {
-          pt.y -= midY
-          pt.x -= midX
-        }
-      }
-    }
-
-    return { paths, error: null }
-  } catch (e: any) {
-    return { paths: [], error: e.message || String(e) }
-  }
-}
-
 function pathsToOBJ(paths: YarnPath[]): string {
-  const lines: string[] = ['# Knitout 3D Visualizer export', 'o knitout']
-  let vertexOffset = 1
-
+  const lines = ['# knitout export', 'o knitout']
+  let off = 1
   for (const path of paths) {
     if (path.points.length < 2) continue
-    lines.push(`g ${path.id}`)
-    for (const p of path.points) {
-      lines.push(`v ${p.x.toFixed(4)} ${p.y.toFixed(4)} ${p.z.toFixed(4)}`)
-    }
-    for (let i = 0; i < path.points.length - 1; i++) {
-      lines.push(`l ${vertexOffset + i} ${vertexOffset + i + 1}`)
-    }
-    vertexOffset += path.points.length
+    for (const p of path.points) lines.push(`v ${p.x.toFixed(4)} ${p.y.toFixed(4)} ${p.z.toFixed(4)}`)
+    for (let i = 0; i < path.points.length - 1; i++) lines.push(`l ${off + i} ${off + i + 1}`)
+    off += path.points.length
   }
   return lines.join('\n')
 }
 
 export const useStore = create<State>((set, get) => ({
-  code: DEFAULT_CODE,
-  yarnPaths: [],
-  selectedLine: null,
-  selectedYarnId: null,
-  error: null,
-  isRunning: false,
-  jumpToLine: null,
-  relaxed: false,
-
+  code: DEFAULT_CODE, yarnPaths: [], operations: [], errors: [], finalState: null, occupied: [],
+  selectedLine: null, selectedYarnId: null, selectedOpIndex: null, error: null, isRunning: false,
+  jumpToLine: null, relaxed: false, isPlaying: false, playSpeedMs: 350,
   setCode: (code) => set({ code }),
   setSelectedLine: (line) => set({ selectedLine: line }),
   setJumpToLine: (line) => set({ jumpToLine: line }),
-
-  selectYarn: (id, line = null) => {
-    set({ selectedYarnId: id, selectedLine: line ?? null, jumpToLine: line ?? null })
-  },
-
+  setSelectedOpIndex: (i) => set({ selectedOpIndex: i }),
+  selectYarn: (id, line = null) => set({ selectedYarnId: id, selectedLine: line ?? null, jumpToLine: line ?? null }),
   run: () => {
     const { code } = get()
-    set({ isRunning: true, error: null, selectedLine: null, selectedYarnId: null, relaxed: false })
-    const { paths, error } = parseAndBuildYarnPaths(code)
-    set({ yarnPaths: paths, error, isRunning: false })
+    set({ isRunning: true, error: null, selectedLine: null, selectedYarnId: null, selectedOpIndex: null, relaxed: false })
+    try {
+      const { operations, errors, finalState } = interpretKnitout(code)
+      let yarnPaths = buildGeometry(operations)
+      yarnPaths = relaxPaths(yarnPaths, 28)
+      set({ operations, errors, finalState, occupied: occupiedNeedles(finalState), yarnPaths, isRunning: false, relaxed: true })
+    } catch (e: any) {
+      set({ error: e.message || String(e), isRunning: false })
+    }
   },
-
   relax: () => {
     const { yarnPaths } = get()
-    if (yarnPaths.length === 0) return
-    const relaxed = relaxPaths(yarnPaths, 14, 0.3)
-    set({ yarnPaths: relaxed, relaxed: true })
+    if (!yarnPaths.length) return
+    set({ yarnPaths: relaxPaths(yarnPaths, 40), relaxed: true })
   },
-
   exportOBJ: () => {
     const { yarnPaths } = get()
-    if (yarnPaths.length === 0) return
-    const obj = pathsToOBJ(yarnPaths)
-    const blob = new Blob([obj], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
+    if (!yarnPaths.length) return
     const a = document.createElement('a')
-    a.href = url
+    a.href = URL.createObjectURL(new Blob([pathsToOBJ(yarnPaths)], { type: 'text/plain' }))
     a.download = 'knitout-export.obj'
     a.click()
-    URL.revokeObjectURL(url)
+  },
+  play: () => {
+    const { operations, selectedOpIndex, isPlaying } = get()
+    if (!operations.length || isPlaying) return
+    set({ isPlaying: true })
+    let i = selectedOpIndex === null ? 0 : selectedOpIndex
+    const tick = () => {
+      const st = get()
+      if (!st.isPlaying) return
+      if (i >= st.operations.length) { set({ isPlaying: false }); return }
+      const op = st.operations[i]
+      set({ selectedOpIndex: op.index, selectedLine: op.line, jumpToLine: op.line })
+      i++
+      setTimeout(tick, st.playSpeedMs)
+    }
+    tick()
+  },
+  pause: () => set({ isPlaying: false }),
+  stopPlay: () => set({ isPlaying: false, selectedOpIndex: null }),
+  stepNext: () => {
+    const { operations, selectedOpIndex } = get()
+    if (!operations.length) return
+    const next = Math.min((selectedOpIndex === null ? -1 : selectedOpIndex) + 1, operations.length - 1)
+    const op = operations[next]
+    set({ isPlaying: false, selectedOpIndex: op.index, selectedLine: op.line, jumpToLine: op.line })
+  },
+  stepPrev: () => {
+    const { operations, selectedOpIndex } = get()
+    if (!operations.length) return
+    const prev = Math.max((selectedOpIndex === null ? 0 : selectedOpIndex) - 1, 0)
+    const op = operations[prev]
+    set({ isPlaying: false, selectedOpIndex: op.index, selectedLine: op.line, jumpToLine: op.line })
   },
 }))
