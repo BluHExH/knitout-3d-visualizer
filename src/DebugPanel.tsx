@@ -69,12 +69,21 @@ export function DebugPanel() {
             <input type="checkbox" checked={showNeedleLabels} onChange={(e) => setShowNeedleLabels(e.target.checked)} />
             Needle labels
           </label>
-          <button className="debug-clear" onClick={() => run()} title="Rebuild geometry with current settings">
-            Rebuild geometry
-          </button>
-          <button className="debug-clear" onClick={() => { setShowUpToOp(null); setSelectedOpIndex(null) }} disabled={showUpToOp === null}>
-            Show all ops
-          </button>
+          <div className="debug-actions">
+            <button type="button" onClick={() => run()} title="Rebuild geometry with current settings">
+              Rebuild geometry
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowUpToOp(null)
+                setSelectedOpIndex(null)
+              }}
+              disabled={showUpToOp === null}
+            >
+              Show all ops
+            </button>
+          </div>
         </div>
       </div>
 
