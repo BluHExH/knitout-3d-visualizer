@@ -16,7 +16,8 @@ function TubeYarn({ path }: { path: YarnPath }) {
       (path.primaryLine === selectedLine || path.lines.includes(selectedLine)))
 
   const isTransfer = path.kind === 'transfer'
-  const radius = isTransfer ? 0.055 : 0.12
+  const isBridge = path.id.startsWith('bridge-')
+  const radius = isTransfer ? 0.055 : isBridge ? 0.09 : 0.12
 
   const { geometry, material } = useMemo(() => {
     if (path.points.length < 2) {
@@ -39,7 +40,7 @@ function TubeYarn({ path }: { path: YarnPath }) {
     })
 
     return { geometry, material }
-  }, [path, radius, isTransfer])
+  }, [path, radius, isTransfer, isBridge])
 
   if (material) {
     material.emissiveIntensity = isHighlighted ? 0.7 : isTransfer ? 0.12 : 0.07
