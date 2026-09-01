@@ -1,41 +1,24 @@
 # Knitout 3D Visualizer (Debug)
 
-Interactive 3D visualizer + **machine-state debugger** for knitout files.
-
-## Stack
-- React 19 + TypeScript
-- React Three Fiber + Three.js + Drei
-- Monaco Editor
-- Zustand
+Interactive 3D visualizer + machine-state debugger for knitout.
 
 ## Run
-
 ```bash
 npm install
 npm run dev
 ```
 
 ## Features
-
-### Visualization
-- Front / back beds, loop stitches, transfer arcs
-- Per-stitch highlighting
+- 3D yarn view (front/back beds, transfers, per-stitch highlight)
+- Machine interpreter with loop tracking per needle
+- Errors & warnings (empty knit/xfer, carrier state, etc.)
+- Diagnostics + Needle bed + Operations panels
+- **Step-through Play / Pause / Next / Prev**
 - Relax + Export OBJ
 
-### Debugging (for real machine use)
-- **Machine interpreter** — tracks loops on every needle
-- **Errors & warnings**
-  - knit on empty needle
-  - xfer from empty needle
-  - carrier not in / still in at end
-  - bad needles / unknown ops
-- **Needle bed panel** — which needles hold loops + carriers
-- **Operations list** — click any op → jumps to code + highlights 3D
-- Editor gutter markers for errors/warnings
-
-## Workflow for debugging
-1. Paste your knitout
-2. Click **Run / Analyze**
-3. Check Diagnostics panel for errors
-4. Inspect Needle bed (what's left on the machine)
-5. Click ops or stitches to cross-link code ↔ 3D
+## Debug workflow
+1. Paste knitout → **Run / Analyze**
+2. Fix items in **Diagnostics**
+3. Use **Play** or **Next/Prev** to step through ops
+4. Check **Needle bed** final state
+5. Click stitches or ops to cross-link code ↔ 3D
