@@ -157,29 +157,21 @@ export function relaxPaths(
   const repulsion = opts.repulsion ?? 0.1
   const crossRepulsion = opts.crossRepulsion ?? 0.045
   const restScale = 0.95
-
-  const result = paths.map((p) => ({
-    ...p,
-    points: p.points.map((pt) => ({ ...pt })),
-  }))
-
+  const result = paths.map((p) => ({ ...p, points: p.points.map((pt) => ({ ...pt })) }))
   const restLens: number[][] = result.map((path) => {
     const lens: number[] = []
     for (let i = 0; i < path.points.length - 1; i++) {
-      const a = path.points[i]
-      const b = path.points[i + 1]
+      const a = path.points[i], b = path.points[i + 1]
       lens.push(Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) * restScale)
     }
     return lens
   })
-
   const sampleIdx = (n: number) => {
     const out: number[] = []
     for (let i = 0; i < n; i += 3) out.push(i)
     if (n > 0 && out[out.length - 1] !== n - 1) out.push(n - 1)
     return out
   }
-
   for (let iter = 0; iter < iterations; iter++) {
     for (let pi = 0; pi < result.length; pi++) {
       const path = result[pi]
@@ -187,7 +179,6 @@ export function relaxPaths(
       const pts = path.points
       const n = pts.length
       const forces = Array.from({ length: n }, () => ({ x: 0, y: 0, z: 0 }))
-
       for (let i = 0; i < n - 1; i++) {
         const a = pts[i], b = pts[i + 1]
         const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z
@@ -197,13 +188,11 @@ export function relaxPaths(
         forces[i].x += dx * f; forces[i].y += dy * f; forces[i].z += dz * f
         forces[i + 1].x -= dx * f; forces[i + 1].y -= dy * f; forces[i + 1].z -= dz * f
       }
-
       for (let i = 1; i < n - 1; i++) {
         forces[i].x += ((pts[i - 1].x + pts[i + 1].x) * 0.5 - pts[i].x) * bend
         forces[i].y += ((pts[i - 1].y + pts[i + 1].y) * 0.5 - pts[i].y) * bend
         forces[i].z += ((pts[i - 1].z + pts[i + 1].z) * 0.5 - pts[i].z) * bend
       }
-
       for (let i = 0; i < n; i++) {
         for (let j = i + 4; j < n; j++) {
           const dx = pts[j].x - pts[i].x, dy = pts[j].y - pts[i].y, dz = pts[j].z - pts[i].z
@@ -217,7 +206,6 @@ export function relaxPaths(
           }
         }
       }
-
       if (path.kind === 'yarn' && iter % 2 === 0) {
         const mySamples = sampleIdx(n)
         for (let qi = 0; qi < result.length; qi++) {
@@ -225,23 +213,20 @@ export function relaxPaths(
           const other = result[qi]
           if (other.kind !== 'yarn' || other.points.length < 3) continue
           if (Math.abs(other.points[0].y - pts[0].y) > STITCH_HEIGHT * 2.5) continue
-          const otherSamples = sampleIdx(other.points.length)
           for (const i of mySamples) {
-            for (const j of otherSamples) {
+            for (const j of sampleIdx(other.points.length)) {
               const a = pts[i], b = other.points[j]
               const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z
               const d2 = dx * dx + dy * dy + dz * dz
-              const minD = 0.28
-              if (d2 < minD * minD && d2 > 1e-8) {
+              if (d2 < 0.28 * 0.28 && d2 > 1e-8) {
                 const d = Math.sqrt(d2)
-                const push = (crossRepulsion * (minD - d)) / d
+                const push = (crossRepulsion * (0.28 - d)) / d
                 forces[i].x -= dx * push; forces[i].y -= dy * push; forces[i].z -= dz * push
               }
             }
           }
         }
       }
-
       for (let i = 0; i < n; i++) {
         const damp = i === 0 || i === n - 1 ? 0.15 : 0.8
         pts[i].x += forces[i].x * damp
@@ -253,16 +238,15 @@ export function relaxPaths(
   return result
 }
 
-export function buildGeometry(operations: Operation[]): YarnPath[] {
+export function buildGeometry(operations: Operation[], opts?: { courseOffset?: boolean }): YarnPath[] {
   const paths: YarnPath[] = []
-  let rack = 0, courseY = 0, lastDir: '+' | '-' | null = null, stitchIndex = 0
+  let rack = 0, courseY = 0, lastDir: '+' | '-' | null = null, stitchIndex = 0, courseIndex = 0
   const onNeedle: Record<string, LiveLoop[]> = {}
   const localKnit = classicLoopLocal(LOOP_W, LOOP_H, 28, false)
   const localTuck = classicLoopLocal(LOOP_W, LOOP_H, 18, true)
 
   for (const operation of operations) {
     const { op, args, line, index: opIndex } = operation
-
     if (op === 'rack') { rack = parseFloat(args[0]) || 0; continue }
 
     if (op === 'xfer') {
@@ -321,13 +305,19 @@ export function buildGeometry(operations: Operation[]): YarnPath[] {
       const ref = parseNeedle(args[1])
       const carrier = args[2] || '7'
       if (!ref) continue
-      if (lastDir && dir !== lastDir) courseY += STITCH_HEIGHT
+      if (lastDir && dir !== lastDir) {
+        courseY += STITCH_HEIGHT
+        courseIndex += 1
+      }
       lastDir = dir
       const key = needleKey(ref.bed, ref.n, ref.slider)
       const x = ref.n * NEEDLE_SPACING + (ref.bed === 'b' ? rack * NEEDLE_SPACING : 0)
       const z = bedZ(ref.bed)
       const isTuck = op === 'tuck'
-      let loopPts = placeLoop(isTuck ? localTuck : localKnit, x, courseY, z)
+      const useOffset = opts?.courseOffset !== false
+      const courseOffsetX = useOffset ? (courseIndex % 2 === 1 ? 1 : -1) * NEEDLE_SPACING * 0.12 : 0
+      const courseOffsetZ = useOffset ? (courseIndex % 2 === 1 ? 0.04 : -0.04) : 0
+      let loopPts = placeLoop(isTuck ? localTuck : localKnit, x + courseOffsetX, courseY, z + courseOffsetZ)
       const existing = onNeedle[key] || []
       if (existing.length && !isTuck) {
         loopPts = interlockThrough(existing[existing.length - 1], loopPts)
