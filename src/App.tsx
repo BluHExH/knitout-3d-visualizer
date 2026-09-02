@@ -6,6 +6,7 @@ import type { editor as MonacoEditor } from 'monaco-editor'
 import { useStore } from './store'
 import { YarnPaths } from './YarnPaths'
 import { DebugPanel } from './DebugPanel'
+import { SAMPLES } from './samples'
 import './App.css'
 
 export default function App() {
@@ -13,6 +14,7 @@ export default function App() {
     code, setCode, run, relax, exportOBJ, error, isRunning, yarnPaths,
     setSelectedLine, jumpToLine, setJumpToLine, selectedLine, relaxed, errors,
     isPlaying, play, pause, stepNext, stepPrev, stopPlay, selectedOpIndex, operations,
+    loadSample, loadCode, activeSampleId,
   } = useStore()
 
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null)
@@ -76,6 +78,48 @@ export default function App() {
         </div>
 
         <div className="actions">
+          <div className="btn-group samples-group" role="group" aria-label="Samples">
+            <label className="sample-label" htmlFor="sample-select">Sample</label>
+            <select
+              id="sample-select"
+              className="sample-select"
+              value={activeSampleId ?? ''}
+              onChange={(e) => {
+                const id = e.target.value
+                if (id) loadSample(id)
+              }}
+              title="Load a built-in knitout example"
+            >
+              <option value="" disabled={!!activeSampleId}>
+                {activeSampleId ? 'Custom / edited' : 'Choose sample…'}
+              </option>
+              {SAMPLES.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <label className="file-btn" title="Open .k / .knitout file">
+              Open file
+              <input
+                type="file"
+                accept=".k,.knitout,.txt,text/plain"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (!f) return
+                  const reader = new FileReader()
+                  reader.onload = () => {
+                    const text = String(reader.result || '')
+                    loadCode(text, null)
+                  }
+                  reader.readAsText(f)
+                  e.target.value = ''
+                }}
+              />
+            </label>
+          </div>
+
           <div className="btn-group" role="group" aria-label="Analyze">
             <button className="primary" onClick={run} disabled={isRunning} title="Parse, simulate, and build 3D">
               {isRunning ? 'Running…' : 'Run'}
