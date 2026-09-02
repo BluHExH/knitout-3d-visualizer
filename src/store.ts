@@ -8,6 +8,7 @@ import {
 } from './machine'
 import type { YarnPath } from './types'
 import { buildGeometry, linkCarrierPaths, relaxPaths, pathsToOBJ } from './geometry'
+import { SAMPLES, getSample } from './samples'
 
 export type { YarnPoint, YarnPath } from './types'
 
@@ -35,6 +36,7 @@ type State = {
   courseOffset: boolean
   gauge: number
   showNeedleLabels: boolean
+  activeSampleId: string | null
   setCode: (c: string) => void
   setSelectedLine: (l: number | null) => void
   setJumpToLine: (l: number | null) => void
@@ -46,6 +48,8 @@ type State = {
   setCourseOffset: (v: boolean) => void
   setGauge: (v: number) => void
   setShowNeedleLabels: (v: boolean) => void
+  loadSample: (id: string) => void
+  loadCode: (code: string, sampleId?: string | null) => void
   selectYarn: (id: string | null, line?: number | null) => void
   run: () => void
   relax: () => void
@@ -57,103 +61,7 @@ type State = {
   stopPlay: () => void
 }
 
-const DEFAULT_CODE = `;!knitout-2
-;;Carriers: 1 2 3 4 5 6 7 8 9 10
-;; multi-carrier sample: blue(7) then teal(5), 8 needles + transfer
-inhook 7
-tuck - f7 7
-tuck - f5 7
-tuck - f3 7
-tuck - f1 7
-tuck + f0 7
-tuck + f2 7
-tuck + f4 7
-tuck + f6 7
-knit - f7 7
-knit - f6 7
-knit - f5 7
-knit - f4 7
-knit - f3 7
-knit - f2 7
-knit - f1 7
-knit - f0 7
-releasehook 7
-knit + f0 7
-knit + f1 7
-knit + f2 7
-knit + f3 7
-knit + f4 7
-knit + f5 7
-knit + f6 7
-knit + f7 7
-knit - f7 7
-knit - f6 7
-knit - f5 7
-knit - f4 7
-knit - f3 7
-knit - f2 7
-knit - f1 7
-knit - f0 7
-outhook 7
-inhook 5
-knit + f0 5
-knit + f1 5
-knit + f2 5
-knit + f3 5
-knit + f4 5
-knit + f5 5
-knit + f6 5
-knit + f7 5
-knit - f7 5
-knit - f6 5
-knit - f5 5
-knit - f4 5
-knit - f3 5
-knit - f2 5
-knit - f1 5
-knit - f0 5
-xfer f0 b0
-xfer f1 b1
-xfer f2 b2
-xfer f3 b3
-xfer f4 b4
-xfer f5 b5
-xfer f6 b6
-xfer f7 b7
-knit + b0 5
-knit + b1 5
-knit + b2 5
-knit + b3 5
-knit + b4 5
-knit + b5 5
-knit + b6 5
-knit + b7 5
-knit - b7 5
-knit - b6 5
-knit - b5 5
-knit - b4 5
-knit - b3 5
-knit - b2 5
-knit - b1 5
-knit - b0 5
-xfer b0 f0
-xfer b1 f1
-xfer b2 f2
-xfer b3 f3
-xfer b4 f4
-xfer b5 f5
-xfer b6 f6
-xfer b7 f7
-knit + f0 5
-knit + f1 5
-knit + f2 5
-knit + f3 5
-knit + f4 5
-knit + f5 5
-knit + f6 5
-knit + f7 5
-outhook 5
-`
+const DEFAULT_CODE = SAMPLES[0].code
 
 export const useStore = create<State>((set, get) => ({
   code: DEFAULT_CODE,
@@ -179,8 +87,9 @@ export const useStore = create<State>((set, get) => ({
   courseOffset: true,
   gauge: 1,
   showNeedleLabels: true,
+  activeSampleId: SAMPLES[0].id,
 
-  setCode: (code) => set({ code }),
+  setCode: (code) => set({ code, activeSampleId: null }),
   setSelectedLine: (line) => set({ selectedLine: line }),
   setJumpToLine: (line) => set({ jumpToLine: line }),
   setSelectedOpIndex: (i) => set({ selectedOpIndex: i, showUpToOp: i }),
@@ -191,6 +100,32 @@ export const useStore = create<State>((set, get) => ({
   setCourseOffset: (v) => set({ courseOffset: v }),
   setGauge: (v) => set({ gauge: Math.min(1.5, Math.max(0.6, v)) }),
   setShowNeedleLabels: (v) => set({ showNeedleLabels: v }),
+  loadSample: (id) => {
+    const s = getSample(id)
+    if (!s) return
+    set({
+      code: s.code,
+      activeSampleId: id,
+      selectedLine: null,
+      selectedYarnId: null,
+      selectedOpIndex: null,
+      showUpToOp: null,
+      isPlaying: false,
+    })
+    queueMicrotask(() => get().run())
+  },
+  loadCode: (code, sampleId = null) => {
+    set({
+      code,
+      activeSampleId: sampleId,
+      selectedLine: null,
+      selectedYarnId: null,
+      selectedOpIndex: null,
+      showUpToOp: null,
+      isPlaying: false,
+    })
+    queueMicrotask(() => get().run())
+  },
   selectYarn: (id, line = null) =>
     set({ selectedYarnId: id, selectedLine: line ?? null, jumpToLine: line ?? null }),
 
