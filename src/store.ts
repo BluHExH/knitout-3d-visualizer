@@ -9,6 +9,8 @@ import {
 import type { YarnPath } from './types'
 import { buildGeometry, linkCarrierPaths, relaxPaths, pathsToOBJ } from './geometry'
 import { SAMPLES, getSample } from './samples'
+import { JS_SAMPLES, getJsSample } from './jsSamples'
+import { compileKnitoutJs } from './knitoutWriter'
 
 export type { YarnPoint, YarnPath } from './types'
 
@@ -37,6 +39,9 @@ type State = {
   gauge: number
   showNeedleLabels: boolean
   activeSampleId: string | null
+  editorMode: 'knitout' | 'javascript'
+  jsCode: string
+  generatedKnitout: string | null
   setCode: (c: string) => void
   setSelectedLine: (l: number | null) => void
   setJumpToLine: (l: number | null) => void
@@ -50,6 +55,10 @@ type State = {
   setShowNeedleLabels: (v: boolean) => void
   loadSample: (id: string) => void
   loadCode: (code: string, sampleId?: string | null) => void
+  setEditorMode: (m: 'knitout' | 'javascript') => void
+  setJsCode: (c: string) => void
+  loadJsSample: (id: string) => void
+  runJs: () => void
   selectYarn: (id: string | null, line?: number | null) => void
   run: () => void
   relax: () => void
@@ -88,6 +97,9 @@ export const useStore = create<State>((set, get) => ({
   gauge: 1,
   showNeedleLabels: true,
   activeSampleId: SAMPLES[0].id,
+  editorMode: 'knitout',
+  jsCode: JS_SAMPLES[0].code,
+  generatedKnitout: null,
 
   setCode: (code) => set({ code, activeSampleId: null }),
   setSelectedLine: (line) => set({ selectedLine: line }),
@@ -111,6 +123,7 @@ export const useStore = create<State>((set, get) => ({
       selectedOpIndex: null,
       showUpToOp: null,
       isPlaying: false,
+      editorMode: 'knitout',
     })
     queueMicrotask(() => get().run())
   },
@@ -123,6 +136,38 @@ export const useStore = create<State>((set, get) => ({
       selectedOpIndex: null,
       showUpToOp: null,
       isPlaying: false,
+      editorMode: 'knitout',
+    })
+    queueMicrotask(() => get().run())
+  },
+  setEditorMode: (m) => set({ editorMode: m, error: null }),
+  setJsCode: (c) => set({ jsCode: c }),
+  loadJsSample: (id) => {
+    const s = getJsSample(id)
+    if (!s) return
+    set({
+      jsCode: s.code,
+      editorMode: 'javascript',
+      activeSampleId: id,
+      error: null,
+    })
+  },
+  runJs: () => {
+    const { jsCode } = get()
+    set({ isRunning: true, error: null, isPlaying: false })
+    const result = compileKnitoutJs(jsCode)
+    if (!result.ok) {
+      set({ isRunning: false, error: result.error, generatedKnitout: null })
+      return
+    }
+    set({
+      code: result.knitout,
+      generatedKnitout: result.knitout,
+      isRunning: false,
+      selectedLine: null,
+      selectedYarnId: null,
+      selectedOpIndex: null,
+      showUpToOp: null,
     })
     queueMicrotask(() => get().run())
   },
